@@ -2,7 +2,7 @@ import { Client, IMessage } from '@stomp/stompjs';
 import SockJS from 'sockjs-client';
 
 // SockJS endpoint (HTTP, not WS)
-const WS_URL = 'http://localhost:8080/api/ws';
+const WS_URL = 'https://zootopia-be.onrender.com/api/ws';
 
 export interface WebSocketMessage {
   id: number;
