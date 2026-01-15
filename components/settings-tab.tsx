@@ -1,6 +1,6 @@
 "use client"
 
-import { Bot, Zap, MessageSquare, Smile, Heart, Briefcase, ChevronRight, Sparkles, LogOut } from "lucide-react"
+import { Bot, Zap, MessageSquare, Smile, Heart, Briefcase, ChevronRight, Sparkles, LogOut, X } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { useSettings } from "@/app/page"
@@ -13,11 +13,10 @@ export function SettingsTab({ onLogout }: SettingsTabProps) {
   const { settings, updateSettings, saveSettings } = useSettings()
 
   const handleUpdateSettings = async (newSettings: Parameters<typeof updateSettings>[0]) => {
+    const merged = { ...settings, ...newSettings }
     updateSettings(newSettings)
-    // Auto-save after updating
-    setTimeout(() => {
-      saveSettings()
-    }, 500)
+    // Save immediately with the new values
+    await saveSettings(merged)
   }
 
   return (
@@ -251,6 +250,152 @@ export function SettingsTab({ onLogout }: SettingsTabProps) {
         {/* 버전 정보 */}
         <div className="px-4 pb-8 text-center">
           <p className="text-xs text-muted-foreground">카톡사이 v1.0.0</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Modal version of settings for use in chat room
+interface SettingsModalProps {
+  isOpen: boolean
+  onClose: () => void
+}
+
+export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+  const { settings, updateSettings, saveSettings } = useSettings()
+
+  const handleUpdateSettings = async (newSettings: Parameters<typeof updateSettings>[0]) => {
+    const merged = { ...settings, ...newSettings }
+    updateSettings(newSettings)
+    await saveSettings(merged)
+  }
+
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
+      <div className="bg-background w-full max-w-md rounded-t-3xl max-h-[85vh] flex flex-col animate-in slide-in-from-bottom duration-300">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-4 border-b border-border">
+          <h2 className="text-lg font-bold text-foreground">AI 설정</h2>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* 답장 모드 선택 */}
+          <div className="space-y-3">
+            <p className="text-sm font-medium text-muted-foreground">답장 모드</p>
+            <button
+              onClick={() => handleUpdateSettings({ replyMode: "auto" })}
+              className={`w-full p-4 rounded-2xl text-left transition-all border-2 ${
+                settings.replyMode === "auto"
+                  ? "border-primary bg-primary/5"
+                  : "border-transparent bg-secondary hover:bg-accent"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Zap className={`w-5 h-5 ${settings.replyMode === "auto" ? "text-primary" : "text-muted-foreground"}`} />
+                <div className="flex-1">
+                  <span className="font-medium text-foreground">자동 답장</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">AI가 자동으로 답장합니다</p>
+                </div>
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  settings.replyMode === "auto" ? "border-primary bg-primary" : "border-muted-foreground"
+                }`}>
+                  {settings.replyMode === "auto" && <div className="w-2 h-2 rounded-full bg-primary-foreground" />}
+                </div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => handleUpdateSettings({ replyMode: "suggest" })}
+              className={`w-full p-4 rounded-2xl text-left transition-all border-2 ${
+                settings.replyMode === "suggest"
+                  ? "border-primary bg-primary/5"
+                  : "border-transparent bg-secondary hover:bg-accent"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <MessageSquare className={`w-5 h-5 ${settings.replyMode === "suggest" ? "text-primary" : "text-muted-foreground"}`} />
+                <div className="flex-1">
+                  <span className="font-medium text-foreground">추천 후 선택</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">AI가 추천하면 직접 선택</p>
+                </div>
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  settings.replyMode === "suggest" ? "border-primary bg-primary" : "border-muted-foreground"
+                }`}>
+                  {settings.replyMode === "suggest" && <div className="w-2 h-2 rounded-full bg-primary-foreground" />}
+                </div>
+              </div>
+            </button>
+          </div>
+
+          {/* 자동 답장 세부 설정 */}
+          {settings.replyMode === "auto" && (
+            <div className="bg-secondary rounded-2xl p-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary" />
+                <span className="font-medium text-sm text-foreground">자동 답장 설정</span>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">친밀도 기준</span>
+                  <span className="text-sm font-semibold text-primary">{settings.autoReplyThreshold}점 이하</span>
+                </div>
+                <Slider
+                  value={[settings.autoReplyThreshold]}
+                  onValueChange={([value]) => handleUpdateSettings({ autoReplyThreshold: value })}
+                  max={100}
+                  min={0}
+                  step={5}
+                  className="w-full"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-sm text-muted-foreground">기본 어조</span>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => handleUpdateSettings({ defaultTone: "polite" })}
+                    className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                      settings.defaultTone === "polite"
+                        ? "bg-green-100 border-2 border-green-500"
+                        : "bg-card border-2 border-transparent hover:bg-accent"
+                    }`}
+                  >
+                    <Smile className={`w-4 h-4 ${settings.defaultTone === "polite" ? "text-green-600" : "text-muted-foreground"}`} />
+                    <span className={`text-xs ${settings.defaultTone === "polite" ? "text-green-700" : "text-muted-foreground"}`}>정중한</span>
+                  </button>
+                  <button
+                    onClick={() => handleUpdateSettings({ defaultTone: "friendly" })}
+                    className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                      settings.defaultTone === "friendly"
+                        ? "bg-pink-100 border-2 border-pink-500"
+                        : "bg-card border-2 border-transparent hover:bg-accent"
+                    }`}
+                  >
+                    <Heart className={`w-4 h-4 ${settings.defaultTone === "friendly" ? "text-pink-600" : "text-muted-foreground"}`} />
+                    <span className={`text-xs ${settings.defaultTone === "friendly" ? "text-pink-700" : "text-muted-foreground"}`}>친근한</span>
+                  </button>
+                  <button
+                    onClick={() => handleUpdateSettings({ defaultTone: "formal" })}
+                    className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                      settings.defaultTone === "formal"
+                        ? "bg-blue-100 border-2 border-blue-500"
+                        : "bg-card border-2 border-transparent hover:bg-accent"
+                    }`}
+                  >
+                    <Briefcase className={`w-4 h-4 ${settings.defaultTone === "formal" ? "text-blue-600" : "text-muted-foreground"}`} />
+                    <span className={`text-xs ${settings.defaultTone === "formal" ? "text-blue-700" : "text-muted-foreground"}`}>공식적</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
