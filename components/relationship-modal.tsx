@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
-import { X, Search, TrendingUp, TrendingDown, Minus, Crown, Medal, Award } from "lucide-react"
+import { useState, useEffect } from "react"
+import { X, Search, TrendingUp, TrendingDown, Minus, Crown, Medal, Award, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Progress } from "@/components/ui/progress"
+import { friendsApi, type FriendResponse, type RelationshipStatsResponse } from "@/lib/api"
 
 interface RelationshipModalProps {
   isOpen: boolean
@@ -24,63 +25,34 @@ interface Friend {
   badge: "bestie" | "close" | "acquaintance" | "distant"
 }
 
-const friends: Friend[] = [
-  {
-    id: "1",
-    name: "이서연",
-    avatar: "/korean-woman-smile.jpg",
-    score: 98,
-    trend: "up",
-    lastContact: "오늘",
-    replySpeed: "fast",
-    initiator: "equal",
-    badge: "bestie",
-  },
-  {
-    id: "2",
-    name: "박지훈",
-    avatar: "/korean-man-suit.jpg",
-    score: 85,
-    trend: "stable",
-    lastContact: "어제",
-    replySpeed: "fast",
-    initiator: "them",
-    badge: "close",
-  },
-  {
-    id: "3",
-    name: "최유나",
-    avatar: "/korean-woman-glasses.jpg",
-    score: 72,
-    trend: "down",
-    lastContact: "3일 전",
-    replySpeed: "normal",
-    initiator: "me",
-    badge: "close",
-  },
-  {
-    id: "4",
-    name: "정민수",
-    avatar: "/korean-man-casual.png",
-    score: 45,
-    trend: "stable",
-    lastContact: "2주 전",
-    replySpeed: "slow",
-    initiator: "me",
-    badge: "acquaintance",
-  },
-  {
-    id: "5",
-    name: "김민지",
-    avatar: "/korean-woman-profile.png",
-    score: 12,
-    trend: "down",
-    lastContact: "6년 전",
-    replySpeed: "slow",
-    initiator: "them",
-    badge: "distant",
-  },
-]
+function formatLastContact(dateString: string | null): string {
+  if (!dateString) return '기록 없음'
+
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) return '오늘'
+  if (diffDays === 1) return '어제'
+  if (diffDays < 7) return `${diffDays}일 전`
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}주 전`
+  if (diffDays < 365) return `${Math.floor(diffDays / 30)}개월 전`
+  return `${Math.floor(diffDays / 365)}년 전`
+}
+
+function convertToFriend(friendResponse: FriendResponse): Friend {
+  return {
+    id: friendResponse.id.toString(),
+    name: friendResponse.name,
+    avatar: friendResponse.avatar || '/default-avatar.png',
+    score: friendResponse.intimacyScore,
+    trend: friendResponse.intimacyTrend,
+    lastContact: formatLastContact(friendResponse.lastContactAt),
+    replySpeed: friendResponse.replySpeed,
+    initiator: friendResponse.initiator,
+    badge: friendResponse.badge,
+  }
+}
 
 const badgeConfig = {
   bestie: { label: "베스트", color: "bg-pink-500 text-white", icon: Crown },
@@ -91,6 +63,31 @@ const badgeConfig = {
 
 export function RelationshipModal({ isOpen, onClose }: RelationshipModalProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [friends, setFriends] = useState<Friend[]>([])
+  const [stats, setStats] = useState<RelationshipStatsResponse | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    const loadData = async () => {
+      setIsLoading(true)
+      try {
+        const [rankingData, statsData] = await Promise.all([
+          friendsApi.getRanking(),
+          friendsApi.getStats()
+        ])
+        setFriends(rankingData.map(convertToFriend))
+        setStats(statsData)
+      } catch (error) {
+        console.error('Failed to load relationship data:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadData()
+  }, [isOpen])
 
   if (!isOpen) return null
 
@@ -107,48 +104,60 @@ export function RelationshipModal({ isOpen, onClose }: RelationshipModalProps) {
           </Button>
         </div>
 
-        {/* Search */}
-        <div className="px-4 py-3 border-b border-border">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="친구 검색..."
-              className="pl-10 bg-secondary border-0 rounded-full"
-            />
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Search */}
+            <div className="px-4 py-3 border-b border-border">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="친구 검색..."
+                  className="pl-10 bg-secondary border-0 rounded-full"
+                />
+              </div>
+            </div>
 
-        {/* Stats Summary */}
-        <div className="px-4 py-3 bg-accent/30">
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-card rounded-xl p-3 text-center shadow-sm">
-              <p className="text-2xl font-bold text-primary">{friends.filter((f) => f.badge === "bestie").length}</p>
-              <p className="text-xs text-muted-foreground">베스트</p>
+            {/* Stats Summary */}
+            <div className="px-4 py-3 bg-accent/30">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-card rounded-xl p-3 text-center shadow-sm">
+                  <p className="text-2xl font-bold text-primary">{stats?.bestieCount || 0}</p>
+                  <p className="text-xs text-muted-foreground">베스트</p>
+                </div>
+                <div className="bg-card rounded-xl p-3 text-center shadow-sm">
+                  <p className="text-2xl font-bold text-foreground">{stats?.closeCount || 0}</p>
+                  <p className="text-xs text-muted-foreground">친한 친구</p>
+                </div>
+                <div className="bg-card rounded-xl p-3 text-center shadow-sm">
+                  <p className="text-2xl font-bold text-muted-foreground">{stats?.distantCount || 0}</p>
+                  <p className="text-xs text-muted-foreground">먼 사이</p>
+                </div>
+              </div>
             </div>
-            <div className="bg-card rounded-xl p-3 text-center shadow-sm">
-              <p className="text-2xl font-bold text-foreground">{friends.filter((f) => f.badge === "close").length}</p>
-              <p className="text-xs text-muted-foreground">친한 친구</p>
-            </div>
-            <div className="bg-card rounded-xl p-3 text-center shadow-sm">
-              <p className="text-2xl font-bold text-muted-foreground">
-                {friends.filter((f) => f.badge === "distant").length}
-              </p>
-              <p className="text-xs text-muted-foreground">먼 사이</p>
-            </div>
-          </div>
-        </div>
 
-        {/* Friend List */}
-        <div className="flex-1 overflow-y-auto px-4 py-3">
-          <p className="text-xs font-medium text-muted-foreground mb-3">총 {filteredFriends.length}명의 친구</p>
-          <div className="space-y-3">
-            {filteredFriends.map((friend, index) => (
-              <FriendCard key={friend.id} friend={friend} rank={index + 1} />
-            ))}
-          </div>
-        </div>
+            {/* Friend List */}
+            <div className="flex-1 overflow-y-auto px-4 py-3">
+              <p className="text-xs font-medium text-muted-foreground mb-3">총 {filteredFriends.length}명의 친구</p>
+              {filteredFriends.length > 0 ? (
+                <div className="space-y-3">
+                  {filteredFriends.map((friend, index) => (
+                    <FriendCard key={friend.id} friend={friend} rank={index + 1} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p className="text-sm">친구가 없습니다</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

@@ -6,9 +6,10 @@ import { useState } from "react"
 import { MessageCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { authApi, type LoginResponse } from "@/lib/api"
 
 interface LoginScreenProps {
-  onLogin: (userId: string) => void
+  onLogin: (userId: string, userData?: LoginResponse) => void
 }
 
 export function LoginScreen({ onLogin }: LoginScreenProps) {
@@ -27,11 +28,14 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
     setIsLoading(true)
 
-    // TODO: 실제 로그인 로직 구현
-    setTimeout(() => {
-      onLogin(userId.trim())
+    try {
+      const userData = await authApi.login(userId.trim())
+      onLogin(userId.trim(), userData)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "로그인에 실패했습니다")
+    } finally {
       setIsLoading(false)
-    }, 500)
+    }
   }
 
   return (

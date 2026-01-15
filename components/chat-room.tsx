@@ -3,12 +3,21 @@
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
-import { Send, ChevronLeft, MoreVertical, Sparkles, LogOut, Zap, Smile, Heart, Briefcase, X } from "lucide-react"
+import { Send, ChevronLeft, MoreVertical, Sparkles, Zap, LogOut, Loader2, Smile, Heart, Briefcase, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import type { ChatPreview } from "@/app/page"
 import { useSettings } from "@/app/page"
+import { AIReplyModal } from "@/components/ai-reply-modal"
+import { RelationshipModal } from "@/components/relationship-modal"
+import { SettingsModal } from "@/components/settings-tab"
+import {
+  messageApi,
+  aiApi,
+  type MessageResponse,
+  type AIReplyResponse
+} from "@/lib/api"
 
 interface ChatRoomProps {
   chat: ChatPreview
@@ -21,6 +30,12 @@ interface Message {
   content: string
   sender: "me" | "other"
   timestamp: string
+  event?: {
+    type: "wedding" | "birthday" | "funeral" | "reunion" | "general"
+    detected: boolean
+  }
+  insight?: string
+  isAutoReply?: boolean
 }
 
 const eventKeywords = {
@@ -30,7 +45,7 @@ const eventKeywords = {
   reunion: ["오랜만", "연락 안 했", "잘 지냈"],
 }
 
-const replyOptions = {
+const autoReplyOptions = {
   wedding: {
     polite: "와 정말 축하해! 너무 기쁜 소식이다 😊 당연히 갈게! 청첩장 보내줘~",
     friendly: "헐 대박!! 축하해 친구야!! 🎉💕 꼭 갈게 진짜!! 신랑/신부 누구야?!",
@@ -51,53 +66,119 @@ const replyOptions = {
     friendly: "헐 진짜 오랜만!! 어떻게 지냈어?! 😄",
     formal: "오랜만이네요. 잘 지내셨나요?",
   },
+  general: {
+    polite: "응 알겠어!",
+    friendly: "ㅇㅋㅇㅋ!!",
+    formal: "네, 알겠습니다.",
+  },
 }
 
-const initialMessages: Message[] = [
-  {
-    id: "1",
-    content: "야 나 결혼해! 💍",
-    sender: "other",
-    timestamp: "14:32",
-  },
-  {
-    id: "2",
-    content: "다음 달 15일에 식 올리는데 와줄 수 있어?",
-    sender: "other",
-    timestamp: "14:33",
-  },
-]
+function formatTimestamp(dateString: string): string {
+  const date = new Date(dateString)
+  return date.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })
+}
+
+function convertToMessage(msg: MessageResponse, currentUserId: string): Message {
+  return {
+    id: msg.id.toString(),
+    content: msg.content,
+    sender: msg.senderId.toString() === currentUserId ? "me" : "other",
+    timestamp: formatTimestamp(msg.createdAt),
+    event: msg.eventDetected && msg.eventType ? {
+      type: msg.eventType as "wedding" | "birthday" | "funeral" | "reunion" | "general",
+      detected: true
+    } : undefined,
+    insight: msg.aiInsight || undefined,
+    isAutoReply: msg.isAutoReply,
+  }
+}
 
 export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
   const { settings } = useSettings()
-  const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSending, setIsSending] = useState(false)
   const [inputValue, setInputValue] = useState("")
   const [showOptionsMenu, setShowOptionsMenu] = useState(false)
+  const [aiReplies, setAiReplies] = useState<AIReplyResponse | null>(null)
   const optionsMenuRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  const [detectedEvent, setDetectedEvent] = useState<keyof typeof replyOptions | null>(null)
+  const [showReplyModal, setShowReplyModal] = useState(false)
+  const [showRelationshipModal, setShowRelationshipModal] = useState(false)
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [showCommandMenu, setShowCommandMenu] = useState(false)
+  const [selectedEvent, setSelectedEvent] = useState<Message["event"] | null>(null)
+  const [pendingAutoReply, setPendingAutoReply] = useState<{ event?: Message["event"]; show: boolean } | null>(null)
   const [showAIPanel, setShowAIPanel] = useState(false)
-  const [autoReplySent, setAutoReplySent] = useState(false)
+  const [detectedEvent, setDetectedEvent] = useState<keyof typeof autoReplyOptions | null>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
+  // Load messages from API
+  useEffect(() => {
+    const loadMessages = async () => {
+      try {
+        const chatRoomId = parseInt(chat.id)
+        const apiMessages = await messageApi.getAllMessages(chatRoomId)
+        const userId = localStorage.getItem('userId') || ''
+
+        const convertedMessages = apiMessages.map(msg => convertToMessage(msg, userId))
+        setMessages(convertedMessages)
+      } catch (error) {
+        console.error('Failed to load messages:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadMessages()
+
+    // Poll for new messages every 3 seconds
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const chatRoomId = parseInt(chat.id)
+        const apiMessages = await messageApi.getAllMessages(chatRoomId)
+        const userId = localStorage.getItem('userId') || ''
+        const convertedMessages = apiMessages.map(msg => convertToMessage(msg, userId))
+        setMessages(convertedMessages)
+      } catch (error) {
+        console.error('Failed to poll messages:', error)
+      }
+    }, 3000)
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+      }
+    }
+  }, [chat.id])
+
   useEffect(() => {
     scrollToBottom()
   }, [messages])
 
+  // Detect events from messages
   useEffect(() => {
     const lastOtherMessage = [...messages].reverse().find((m) => m.sender === "other")
     if (!lastOtherMessage) return
 
+    // Check if event already detected from backend
+    if (lastOtherMessage.event?.detected) {
+      setDetectedEvent(lastOtherMessage.event.type)
+      setShowAIPanel(true)
+      return
+    }
+
+    // Client-side event detection fallback
     for (const [event, keywords] of Object.entries(eventKeywords)) {
       if (keywords.some((keyword) => lastOtherMessage.content.includes(keyword))) {
-        setDetectedEvent(event as keyof typeof replyOptions)
+        setDetectedEvent(event as keyof typeof autoReplyOptions)
         setShowAIPanel(true)
-        setAutoReplySent(false)
         break
       }
     }
@@ -116,26 +197,128 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [showOptionsMenu])
 
+  // Auto-reply check
+  useEffect(() => {
+    if (settings.replyMode === "auto" && chat.intimacyScore !== undefined) {
+      const eventMessage = messages.find((m) => m.event?.detected)
+      const hasMyReply = messages.some((m) => m.sender === "me")
+
+      if (eventMessage && chat.intimacyScore <= settings.autoReplyThreshold && !hasMyReply) {
+        setPendingAutoReply({ event: eventMessage.event, show: true })
+      }
+    }
+  }, [settings.replyMode, settings.autoReplyThreshold, chat.intimacyScore, messages])
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setInputValue(value)
+
+    if (value === "@" || value.startsWith("@카톡사이")) {
+      setShowCommandMenu(true)
+    } else {
+      setShowCommandMenu(false)
+    }
   }
 
-  const handleSendMessage = (content?: string) => {
+  const handleSendMessage = async (content?: string) => {
     const messageContent = content || inputValue
-    if (!messageContent.trim()) return
+    if (!messageContent.trim() || isSending) return
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      content: messageContent,
-      sender: "me",
-      timestamp: new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }),
+    setIsSending(true)
+    try {
+      const chatRoomId = parseInt(chat.id)
+      await messageApi.sendMessage(chatRoomId, {
+        content: messageContent,
+        type: 'TEXT',
+      })
+
+      setInputValue("")
+      setShowCommandMenu(false)
+      setPendingAutoReply(null)
+      setShowAIPanel(false)
+
+      // Refresh messages
+      const apiMessages = await messageApi.getAllMessages(chatRoomId)
+      const userId = localStorage.getItem('userId') || ''
+      setMessages(apiMessages.map(msg => convertToMessage(msg, userId)))
+    } catch (error) {
+      console.error('Failed to send message:', error)
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  const handleAutoReply = async () => {
+    if (!detectedEvent) return
+
+    const tone = settings.defaultTone
+    const replyText = autoReplyOptions[detectedEvent][tone]
+
+    setIsSending(true)
+    try {
+      const chatRoomId = parseInt(chat.id)
+      await messageApi.sendMessage(chatRoomId, {
+        content: replyText,
+        type: 'TEXT',
+        isAutoReply: true
+      })
+
+      // Refresh messages
+      const apiMessages = await messageApi.getAllMessages(chatRoomId)
+      const userId = localStorage.getItem('userId') || ''
+      setMessages(apiMessages.map(msg => convertToMessage(msg, userId)))
+      setPendingAutoReply(null)
+      setShowAIPanel(false)
+    } catch (error) {
+      console.error('Failed to send auto reply:', error)
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  const handleGenerateReply = async (event?: Message["event"]) => {
+    setSelectedEvent(event || null)
+
+    // Try to generate AI reply from backend
+    try {
+      const chatRoomId = parseInt(chat.id)
+      const friendId = 1 // This should come from the chat member data
+      const eventType = event?.type || detectedEvent || 'general'
+
+      const response = await aiApi.generateReply({
+        chatRoomId,
+        friendId,
+        eventType
+      })
+      setAiReplies(response)
+    } catch (error) {
+      console.error('Failed to generate AI reply:', error)
+      setAiReplies(null)
     }
 
-    setMessages([...messages, newMessage])
-    setInputValue("")
+    setShowReplyModal(true)
+    setPendingAutoReply(null)
     setShowAIPanel(false)
-    setAutoReplySent(true)
+  }
+
+  const handleSelectReply = (reply: string) => {
+    setInputValue(reply)
+    setShowReplyModal(false)
+    inputRef.current?.focus()
+  }
+
+  const handleCommandSelect = (command: string) => {
+    setShowCommandMenu(false)
+    setInputValue("")
+
+    if (command === "generate") {
+      const eventMessage = messages.find((m) => m.event?.detected)
+      handleGenerateReply(eventMessage?.event)
+    } else if (command === "rank") {
+      setShowRelationshipModal(true)
+    } else if (command === "settings") {
+      setShowSettingsModal(true)
+    }
   }
 
   const handleLeaveChat = () => {
@@ -146,14 +329,12 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     setShowOptionsMenu(false)
   }
 
-  const getAutoReply = () => {
-    if (!detectedEvent) return ""
-    const toneMap = {
-      polite: "polite",
-      friendly: "friendly",
-      formal: "formal",
-    } as const
-    return replyOptions[detectedEvent][toneMap[settings.defaultTone]]
+  if (isLoading) {
+    return (
+      <div className="flex flex-col h-screen items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    )
   }
 
   return (
@@ -169,7 +350,9 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
         </Avatar>
         <div className="flex-1 min-w-0">
           <h1 className="font-semibold text-foreground truncate">{chat.name}</h1>
-          <p className="text-xs text-muted-foreground">마지막 대화: 2019년 5월</p>
+          {chat.intimacyScore !== undefined && (
+            <p className="text-xs text-muted-foreground">친밀도: {chat.intimacyScore}점</p>
+          )}
         </div>
         <div className="relative" ref={optionsMenuRef}>
           <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setShowOptionsMenu(!showOptionsMenu)}>
@@ -193,10 +376,17 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-secondary/30">
         {/* History Summary Card */}
-        <div className="bg-accent/50 rounded-xl p-3 text-center text-sm text-muted-foreground">
-          <Sparkles className="w-4 h-4 inline-block mr-1 text-primary" />
-          2019년 5월에 마지막으로 &apos;교양 과제&apos; 대화를 나눴습니다
-        </div>
+        {messages.length === 0 ? (
+          <div className="bg-accent/50 rounded-xl p-3 text-center text-sm text-muted-foreground">
+            <Sparkles className="w-4 h-4 inline-block mr-1 text-primary" />
+            아직 대화가 없습니다. 첫 메시지를 보내보세요!
+          </div>
+        ) : (
+          <div className="bg-accent/50 rounded-xl p-3 text-center text-sm text-muted-foreground">
+            <Sparkles className="w-4 h-4 inline-block mr-1 text-primary" />
+            {messages.length}개의 메시지가 있습니다
+          </div>
+        )}
 
         {messages.map((message) => (
           <div key={message.id}>
@@ -223,16 +413,57 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
                   }`}
                 >
                   {message.timestamp}
+                  {message.isAutoReply && <span className="ml-1 text-primary">⚡</span>}
                 </p>
               </div>
             </div>
           </div>
         ))}
 
+        {pendingAutoReply?.show && (
+          <div className="bg-primary/10 border border-primary/30 rounded-2xl p-4 animate-in fade-in slide-in-from-bottom-2">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <Zap className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium text-sm text-foreground">자동 답장 대기 중</p>
+                <p className="text-xs text-muted-foreground">
+                  친밀도 {chat.intimacyScore}점 -{" "}
+                  {settings.defaultTone === "polite"
+                    ? "정중한"
+                    : settings.defaultTone === "friendly"
+                      ? "친근한"
+                      : "공식적"}{" "}
+                  어조로 답장됩니다
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleAutoReply} className="flex-1 bg-primary hover:bg-primary/90" size="sm" disabled={isSending}>
+                <Zap className="w-4 h-4 mr-1" />
+                자동 답장 보내기
+              </Button>
+              <Button
+                onClick={() => {
+                  setPendingAutoReply(null)
+                  handleGenerateReply(pendingAutoReply.event)
+                }}
+                variant="outline"
+                className="flex-1"
+                size="sm"
+              >
+                직접 선택하기
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
-      {showAIPanel && detectedEvent && !autoReplySent && (
+      {/* AI Panel for event detection */}
+      {showAIPanel && detectedEvent && !pendingAutoReply?.show && (
         <div className="bg-card border-t border-border animate-in slide-in-from-bottom duration-300">
           {/* Event Detection Header */}
           <div className="px-4 py-3 bg-primary/5 border-b border-border flex items-center justify-between">
@@ -250,6 +481,7 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
                   {detectedEvent === "birthday" && "생일 이벤트 감지됨"}
                   {detectedEvent === "funeral" && "부고 이벤트 감지됨"}
                   {detectedEvent === "reunion" && "오랜만의 연락 감지됨"}
+                  {detectedEvent === "general" && "메시지 감지됨"}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {settings.replyMode === "auto" ? "자동 답장이 준비되었습니다" : "AI 추천 답장을 선택해주세요"}
@@ -261,72 +493,57 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
             </Button>
           </div>
 
-          {/* Auto Mode: Show prepared reply */}
-          {settings.replyMode === "auto" ? (
-            <div className="p-4">
-              <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 mb-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap className="w-4 h-4 text-primary" />
-                  <span className="text-xs font-medium text-primary">자동 준비된 답장</span>
+          {/* Suggest Mode: Show multiple options */}
+          <div className="p-4 space-y-2">
+            <button
+              onClick={() => handleSendMessage(autoReplyOptions[detectedEvent].polite)}
+              className="w-full p-3 bg-secondary hover:bg-accent rounded-xl text-left transition-colors"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
+                  <Smile className="w-3 h-3 text-green-600" />
                 </div>
-                <p className="text-sm text-foreground leading-relaxed">{getAutoReply()}</p>
+                <span className="font-medium text-xs text-foreground">정중한 타입</span>
               </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => handleSendMessage(getAutoReply())}
-                  className="flex-1 bg-primary hover:bg-primary/90"
-                >
-                  <Send className="w-4 h-4 mr-2" />
-                  바로 보내기
-                </Button>
-                <Button variant="outline" onClick={() => setShowAIPanel(false)} className="px-4">
-                  취소
-                </Button>
+              <p className="text-sm text-muted-foreground leading-relaxed">{autoReplyOptions[detectedEvent].polite}</p>
+            </button>
+
+            <button
+              onClick={() => handleSendMessage(autoReplyOptions[detectedEvent].friendly)}
+              className="w-full p-3 bg-secondary hover:bg-accent rounded-xl text-left transition-colors"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-6 h-6 rounded-full bg-pink-100 flex items-center justify-center">
+                  <Heart className="w-3 h-3 text-pink-600" />
+                </div>
+                <span className="font-medium text-xs text-foreground">친근한 타입</span>
               </div>
-            </div>
-          ) : (
-            /* Suggest Mode: Show multiple options */
-            <div className="p-4 space-y-2">
-              <button
-                onClick={() => handleSendMessage(replyOptions[detectedEvent].polite)}
-                className="w-full p-3 bg-secondary hover:bg-accent rounded-xl text-left transition-colors"
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
-                    <Smile className="w-3 h-3 text-green-600" />
-                  </div>
-                  <span className="font-medium text-xs text-foreground">정중한 타입</span>
-                </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">{replyOptions[detectedEvent].polite}</p>
-              </button>
+              <p className="text-sm text-muted-foreground leading-relaxed">{autoReplyOptions[detectedEvent].friendly}</p>
+            </button>
 
-              <button
-                onClick={() => handleSendMessage(replyOptions[detectedEvent].friendly)}
-                className="w-full p-3 bg-secondary hover:bg-accent rounded-xl text-left transition-colors"
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-6 h-6 rounded-full bg-pink-100 flex items-center justify-center">
-                    <Heart className="w-3 h-3 text-pink-600" />
-                  </div>
-                  <span className="font-medium text-xs text-foreground">친근한 타입</span>
+            <button
+              onClick={() => handleSendMessage(autoReplyOptions[detectedEvent].formal)}
+              className="w-full p-3 bg-secondary hover:bg-accent rounded-xl text-left transition-colors"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
+                  <Briefcase className="w-3 h-3 text-blue-600" />
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">{replyOptions[detectedEvent].friendly}</p>
-              </button>
+                <span className="font-medium text-xs text-foreground">공식적 타입</span>
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">{autoReplyOptions[detectedEvent].formal}</p>
+            </button>
 
-              <button
-                onClick={() => handleSendMessage(replyOptions[detectedEvent].formal)}
-                className="w-full p-3 bg-secondary hover:bg-accent rounded-xl text-left transition-colors"
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
-                    <Briefcase className="w-3 h-3 text-blue-600" />
-                  </div>
-                  <span className="font-medium text-xs text-foreground">공식적 타입</span>
-                </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">{replyOptions[detectedEvent].formal}</p>
-              </button>
-            </div>
-          )}
+            <button
+              onClick={() => handleGenerateReply()}
+              className="w-full p-3 bg-primary/10 hover:bg-primary/20 rounded-xl text-left transition-colors border border-primary/20"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary" />
+                <span className="font-medium text-sm text-primary">AI로 더 맞춤 답장 생성하기</span>
+              </div>
+            </button>
+          </div>
 
           {/* Money Guide for special events */}
           {(detectedEvent === "wedding" || detectedEvent === "funeral") && (
@@ -344,8 +561,41 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
         </div>
       )}
 
-      {/* Input - Hide when AI panel is shown */}
-      {(!showAIPanel || autoReplySent) && (
+      {/* Command Menu */}
+      {showCommandMenu && (
+        <div className="bg-card border-t border-border p-2 animate-in slide-in-from-bottom duration-200">
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleCommandSelect("generate")}
+              className="rounded-full"
+            >
+              <Sparkles className="w-4 h-4 mr-1" />
+              AI 답장 생성
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleCommandSelect("rank")}
+              className="rounded-full"
+            >
+              관계 대시보드
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleCommandSelect("settings")}
+              className="rounded-full"
+            >
+              설정
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Input */}
+      {!showAIPanel && (
         <div className="bg-card border-t border-border px-4 py-3">
           <div className="flex items-center gap-2">
             <Input
@@ -353,19 +603,36 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
               value={inputValue}
               onChange={handleInputChange}
               onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-              placeholder="메시지 입력"
+              placeholder="@카톡사이 입력하여 AI 도움받기"
               className="flex-1 bg-secondary border-0 rounded-full px-4"
+              disabled={isSending}
             />
             <Button
               onClick={() => handleSendMessage()}
               size="icon"
               className="shrink-0 rounded-full bg-primary hover:bg-primary/90"
+              disabled={isSending}
             >
-              <Send className="w-4 h-4" />
+              {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </Button>
           </div>
         </div>
       )}
+
+      {/* AI Reply Modal */}
+      <AIReplyModal
+        isOpen={showReplyModal}
+        onClose={() => setShowReplyModal(false)}
+        onSelectReply={handleSelectReply}
+        eventType={selectedEvent?.type || detectedEvent}
+        aiReplies={aiReplies}
+      />
+
+      {/* Relationship Modal */}
+      <RelationshipModal isOpen={showRelationshipModal} onClose={() => setShowRelationshipModal(false)} />
+
+      {/* Settings Modal */}
+      <SettingsModal isOpen={showSettingsModal} onClose={() => setShowSettingsModal(false)} />
     </div>
   )
 }

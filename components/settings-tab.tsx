@@ -1,11 +1,24 @@
 "use client"
 
-import { Bot, Zap, MessageSquare, Smile, Heart, Briefcase, ChevronRight, Sparkles } from "lucide-react"
+import { Bot, Zap, MessageSquare, Smile, Heart, Briefcase, ChevronRight, Sparkles, LogOut } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
+import { Button } from "@/components/ui/button"
 import { useSettings } from "@/app/page"
 
-export function SettingsTab() {
-  const { settings, updateSettings } = useSettings()
+interface SettingsTabProps {
+  onLogout?: () => void
+}
+
+export function SettingsTab({ onLogout }: SettingsTabProps) {
+  const { settings, updateSettings, saveSettings } = useSettings()
+
+  const handleUpdateSettings = async (newSettings: Parameters<typeof updateSettings>[0]) => {
+    updateSettings(newSettings)
+    // Auto-save after updating
+    setTimeout(() => {
+      saveSettings()
+    }, 500)
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -31,7 +44,7 @@ export function SettingsTab() {
           <div className="space-y-3">
             {/* 자동 답장 모드 */}
             <button
-              onClick={() => updateSettings({ replyMode: "auto" })}
+              onClick={() => handleUpdateSettings({ replyMode: "auto" })}
               className={`w-full p-4 rounded-2xl text-left transition-all border-2 ${
                 settings.replyMode === "auto"
                   ? "border-primary bg-primary/5"
@@ -68,7 +81,7 @@ export function SettingsTab() {
 
             {/* AI 추천 후 선택 모드 */}
             <button
-              onClick={() => updateSettings({ replyMode: "suggest" })}
+              onClick={() => handleUpdateSettings({ replyMode: "suggest" })}
               className={`w-full p-4 rounded-2xl text-left transition-all border-2 ${
                 settings.replyMode === "suggest"
                   ? "border-primary bg-primary/5"
@@ -124,7 +137,7 @@ export function SettingsTab() {
                 </div>
                 <Slider
                   value={[settings.autoReplyThreshold]}
-                  onValueChange={([value]) => updateSettings({ autoReplyThreshold: value })}
+                  onValueChange={([value]) => handleUpdateSettings({ autoReplyThreshold: value })}
                   max={100}
                   min={0}
                   step={5}
@@ -140,7 +153,7 @@ export function SettingsTab() {
                 <span className="text-sm text-muted-foreground">기본 답장 어조</span>
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => updateSettings({ defaultTone: "polite" })}
+                    onClick={() => handleUpdateSettings({ defaultTone: "polite" })}
                     className={`p-3 rounded-xl flex flex-col items-center gap-2 transition-all ${
                       settings.defaultTone === "polite"
                         ? "bg-green-100 border-2 border-green-500"
@@ -159,7 +172,7 @@ export function SettingsTab() {
                     </span>
                   </button>
                   <button
-                    onClick={() => updateSettings({ defaultTone: "friendly" })}
+                    onClick={() => handleUpdateSettings({ defaultTone: "friendly" })}
                     className={`p-3 rounded-xl flex flex-col items-center gap-2 transition-all ${
                       settings.defaultTone === "friendly"
                         ? "bg-pink-100 border-2 border-pink-500"
@@ -178,7 +191,7 @@ export function SettingsTab() {
                     </span>
                   </button>
                   <button
-                    onClick={() => updateSettings({ defaultTone: "formal" })}
+                    onClick={() => handleUpdateSettings({ defaultTone: "formal" })}
                     className={`p-3 rounded-xl flex flex-col items-center gap-2 transition-all ${
                       settings.defaultTone === "formal"
                         ? "bg-blue-100 border-2 border-blue-500"
@@ -220,6 +233,20 @@ export function SettingsTab() {
             </button>
           </div>
         </div>
+
+        {/* 로그아웃 버튼 */}
+        {onLogout && (
+          <div className="px-4 pb-5">
+            <Button
+              variant="outline"
+              className="w-full h-12 text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={onLogout}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              로그아웃
+            </Button>
+          </div>
+        )}
 
         {/* 버전 정보 */}
         <div className="px-4 pb-8 text-center">
