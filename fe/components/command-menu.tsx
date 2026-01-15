@@ -19,8 +19,8 @@ export function CommandMenu({ onSelect, onClose }: CommandMenuProps) {
     {
       id: "settings",
       icon: Settings,
-      label: "자동 답장 설정",
-      description: "AI 자동 응답 관리",
+      label: "AI 설정",
+      description: "AI 답장 추천 설정",
     },
     {
       id: "generate",
