@@ -53,6 +53,10 @@ const koreanToneMap: Record<string, keyof typeof toneIcons> = {
   "정중한": "polite",
   "친근한": "friendly",
   "공식적": "formal",
+  // 백엔드에서 오는 tone 값 매핑
+  "사용자 스타일 (기본)": "polite",
+  "조금 더 격식있게": "formal",
+  "조금 더 친근하게": "friendly",
 }
 
 export function AIReplyModal({ isOpen, onClose, onSelectReply, eventType = "general", aiReplies }: AIReplyModalProps) {
