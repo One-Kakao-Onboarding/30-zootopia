@@ -313,11 +313,11 @@ export function ChatList({ chats, onSelectChat, onLeaveChat }: ChatListProps) {
                 >
                   <Avatar className="w-12 h-12">
                     <AvatarImage src={chat.avatar || "/placeholder.svg"} />
-                    <AvatarFallback>{chat.name[0]}</AvatarFallback>
+                    <AvatarFallback>{chat.name?.[0] || "?"}</AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <p className="font-medium text-foreground">{chat.name}</p>
+                      <p className="font-medium text-foreground">{chat.name || "알 수 없음"}</p>
                       <span className="text-xs text-muted-foreground">{chat.timestamp}</span>
                     </div>
                     <div className="flex items-center justify-between mt-0.5">
