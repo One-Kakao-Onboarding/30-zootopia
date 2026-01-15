@@ -148,6 +148,12 @@ export interface GenerateReplyRequest {
   eventType: string;
 }
 
+export interface AutoReplyResult {
+  shouldAutoReply: boolean;
+  message: string | null;
+  reason: string;
+}
+
 export interface EventDetectionResult {
   eventDetected: boolean;
   eventType: string;
@@ -413,8 +419,8 @@ export const aiApi = {
     return response.data;
   },
 
-  autoReply: async (data: GenerateReplyRequest): Promise<AIReplyResponse> => {
-    const response = await apiRequest<AIReplyResponse>('/ai/auto-reply', {
+  autoReply: async (data: GenerateReplyRequest): Promise<AutoReplyResult> => {
+    const response = await apiRequest<AutoReplyResult>('/ai/auto-reply', {
       method: 'POST',
       body: JSON.stringify(data),
     });

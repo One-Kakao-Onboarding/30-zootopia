@@ -301,46 +301,91 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [showOptionsMenu])
 
-  // Auto-reply check - 완전 자동 모드에서 바로 답장 보내기
+  // Auto-reply check - 완전 자동 모드에서 AI 기반 답장 보내기
   useEffect(() => {
     if (settings.replyMode === "auto" && chat.intimacyScore !== undefined && detectedEvent) {
       const eventMessage = messages.find((m) => m.event?.detected)
       const hasMyReply = messages.some((m) => m.sender === "me")
 
       if (eventMessage && chat.intimacyScore <= settings.autoReplyThreshold && !hasMyReply && !isSending) {
-        // 바로 자동 답장 보내기
-        const tone = settings.defaultTone
-        const replyText = autoReplyOptions[detectedEvent][tone]
         const chatRoomId = parseInt(chat.id)
+        const currentUserId = localStorage.getItem('userNumericId')
+        const friendId = chat.members?.find(m => m.id.toString() !== currentUserId)?.id || 1
 
-        // Optimistic UI
-        const tempId = `temp-auto-${Date.now()}`
-        const optimisticMessage: Message = {
-          id: tempId,
-          content: replyText,
-          sender: "me",
-          timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
-          isAutoReply: true,
-        }
-        setMessages(prev => [...prev, optimisticMessage])
-        setPendingAutoReply(null)
-        setShowAIPanel(false)
-        setSuggestReplies(null)
-        setDetectedEvent(null)
         setIsSending(true)
         isSendingRef.current = true
+        setPendingAutoReply(null)
+        setShowAIPanel(false)
 
-        messageApi.sendMessage(chatRoomId, {
-          content: replyText,
-          type: 'TEXT',
-          isAutoReply: true
-        }).then(response => {
-          setMessages(prev => prev.map(msg =>
-            msg.id === tempId ? { ...msg, id: response.id.toString() } : msg
-          ))
+        // AI API 호출해서 대화 기반 답장 생성
+        aiApi.autoReply({
+          chatRoomId,
+          friendId,
+          eventType: detectedEvent
+        }).then(aiResponse => {
+          // 백엔드에서 shouldAutoReply와 message를 반환
+          if (!aiResponse.shouldAutoReply || !aiResponse.message) {
+            console.log('Auto reply skipped:', aiResponse.reason)
+            setIsSending(false)
+            isSendingRef.current = false
+            return
+          }
+
+          const replyText = aiResponse.message
+
+          // Optimistic UI
+          const tempId = `temp-auto-${Date.now()}`
+          const optimisticMessage: Message = {
+            id: tempId,
+            content: replyText,
+            sender: "me",
+            timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+            isAutoReply: true,
+          }
+          setMessages(prev => [...prev, optimisticMessage])
+          setSuggestReplies(null)
+          setDetectedEvent(null)
+
+          // 서버에 메시지 전송
+          return messageApi.sendMessage(chatRoomId, {
+            content: replyText,
+            type: 'TEXT',
+            isAutoReply: true
+          }).then(response => {
+            setMessages(prev => prev.map(msg =>
+              msg.id === tempId ? { ...msg, id: response.id.toString() } : msg
+            ))
+          }).catch(error => {
+            console.error('Failed to send auto reply:', error)
+            setMessages(prev => prev.filter(msg => msg.id !== tempId))
+          })
         }).catch(error => {
-          console.error('Failed to send auto reply:', error)
-          setMessages(prev => prev.filter(msg => msg.id !== tempId))
+          console.error('Failed to generate AI reply:', error)
+          // AI 실패 시 fallback으로 하드코딩된 답장 사용
+          const replyText = autoReplyOptions[detectedEvent][settings.defaultTone]
+          const tempId = `temp-auto-${Date.now()}`
+          const optimisticMessage: Message = {
+            id: tempId,
+            content: replyText,
+            sender: "me",
+            timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+            isAutoReply: true,
+          }
+          setMessages(prev => [...prev, optimisticMessage])
+          setSuggestReplies(null)
+          setDetectedEvent(null)
+
+          messageApi.sendMessage(chatRoomId, {
+            content: replyText,
+            type: 'TEXT',
+            isAutoReply: true
+          }).then(response => {
+            setMessages(prev => prev.map(msg =>
+              msg.id === tempId ? { ...msg, id: response.id.toString() } : msg
+            ))
+          }).catch(err => {
+            setMessages(prev => prev.filter(msg => msg.id !== tempId))
+          })
         }).finally(() => {
           setIsSending(false)
           setTimeout(() => {
@@ -349,7 +394,7 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
         })
       }
     }
-  }, [settings.replyMode, settings.autoReplyThreshold, settings.defaultTone, chat.intimacyScore, chat.id, messages, detectedEvent, isSending])
+  }, [settings.replyMode, settings.autoReplyThreshold, settings.defaultTone, chat.intimacyScore, chat.id, chat.members, messages, detectedEvent, isSending])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
