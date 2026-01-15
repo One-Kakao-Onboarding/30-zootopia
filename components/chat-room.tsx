@@ -18,6 +18,7 @@ import {
   type MessageResponse,
   type AIReplyResponse
 } from "@/lib/api"
+import { wsService, type WebSocketMessage } from "@/lib/websocket"
 
 interface ChatRoomProps {
   chat: ChatPreview
@@ -101,88 +102,191 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
   const [inputValue, setInputValue] = useState("")
   const [showOptionsMenu, setShowOptionsMenu] = useState(false)
   const [aiReplies, setAiReplies] = useState<AIReplyResponse | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const optionsMenuRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const isSendingRef = useRef(false)
 
   const [showReplyModal, setShowReplyModal] = useState(false)
   const [showRelationshipModal, setShowRelationshipModal] = useState(false)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
   const [showCommandMenu, setShowCommandMenu] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<Message["event"] | null>(null)
+  const [currentEventMessageId, setCurrentEventMessageId] = useState<string | null>(null)
   const [pendingAutoReply, setPendingAutoReply] = useState<{ event?: Message["event"]; show: boolean } | null>(null)
   const [showAIPanel, setShowAIPanel] = useState(false)
   const [detectedEvent, setDetectedEvent] = useState<keyof typeof autoReplyOptions | null>(null)
+  const [suggestReplies, setSuggestReplies] = useState<AIReplyResponse | null>(null)
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false)
+  const [repliedEventMessageIds, setRepliedEventMessageIds] = useState<Set<string>>(new Set())
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
-  // Load messages from API
+  // Load messages from API and subscribe to WebSocket for real-time updates
   useEffect(() => {
+    const chatRoomId = parseInt(chat.id)
+    const userId = localStorage.getItem('userNumericId') || ''
+    const userNumericId = parseInt(userId) || 0
+    let unsubscribe: (() => void) | null = null
+
     const loadMessages = async () => {
       try {
-        const chatRoomId = parseInt(chat.id)
+        setLoadError(null)
+        if (isNaN(chatRoomId)) {
+          throw new Error('잘못된 채팅방 ID입니다')
+        }
         const apiMessages = await messageApi.getAllMessages(chatRoomId)
-        const userId = localStorage.getItem('userId') || ''
-
         const convertedMessages = apiMessages.map(msg => convertToMessage(msg, userId))
         setMessages(convertedMessages)
       } catch (error) {
         console.error('Failed to load messages:', error)
+        setLoadError(error instanceof Error ? error.message : '메시지를 불러올 수 없습니다')
       } finally {
         setIsLoading(false)
       }
     }
 
+    const setupWebSocket = async () => {
+      try {
+        // Connect to WebSocket
+        if (userNumericId > 0) {
+          await wsService.connect(userNumericId)
+          console.log('[WS] Connected, now subscribing to room:', chatRoomId)
+
+          // Subscribe to chat room messages
+          unsubscribe = wsService.subscribe(chatRoomId, (wsMessage: WebSocketMessage) => {
+            // Convert WebSocket message to our Message format
+            const newMessage: Message = {
+              id: wsMessage.id.toString(),
+              content: wsMessage.content,
+              sender: wsMessage.senderId.toString() === userId ? "me" : "other",
+              timestamp: formatTimestamp(wsMessage.createdAt),
+              event: wsMessage.eventDetected && wsMessage.eventType ? {
+                type: wsMessage.eventType as "wedding" | "birthday" | "funeral" | "reunion" | "general",
+                detected: true
+              } : undefined,
+              insight: wsMessage.aiInsight || undefined,
+              isAutoReply: wsMessage.isAutoReply,
+            }
+
+            // Add message if it doesn't already exist
+            setMessages(prev => {
+              // Check if message already exists
+              if (prev.some(m => m.id === newMessage.id)) {
+                return prev
+              }
+              // Replace temp message with real one if exists
+              const tempIndex = prev.findIndex(m =>
+                m.id.startsWith('temp-') &&
+                m.content === newMessage.content &&
+                m.sender === newMessage.sender
+              )
+              if (tempIndex !== -1) {
+                const updated = [...prev]
+                updated[tempIndex] = newMessage
+                return updated
+              }
+              return [...prev, newMessage]
+            })
+          })
+        }
+      } catch (error) {
+        console.error('[WS] Setup failed:', error)
+        startPolling()
+      }
+    }
+
+    const startPolling = () => {
+      // Fallback polling only when WebSocket fails
+      console.log('[Polling] Starting fallback polling for chat room:', chatRoomId)
+      pollingIntervalRef.current = setInterval(async () => {
+        if (loadError || isSendingRef.current) return
+        try {
+          const apiMessages = await messageApi.getAllMessages(chatRoomId)
+          const convertedMessages = apiMessages.map(msg => convertToMessage(msg, userId))
+          setMessages(convertedMessages)
+        } catch (err) {
+          console.error('Failed to poll messages:', err)
+        }
+      }, 500)
+    }
+
     loadMessages()
 
-    // Poll for new messages every 3 seconds
-    pollingIntervalRef.current = setInterval(async () => {
-      try {
-        const chatRoomId = parseInt(chat.id)
-        const apiMessages = await messageApi.getAllMessages(chatRoomId)
-        const userId = localStorage.getItem('userId') || ''
-        const convertedMessages = apiMessages.map(msg => convertToMessage(msg, userId))
-        setMessages(convertedMessages)
-      } catch (error) {
-        console.error('Failed to poll messages:', error)
-      }
-    }, 3000)
+    // Setup WebSocket for real-time messaging
+    setupWebSocket().then(() => {
+      console.log('[WebSocket] Real-time messaging enabled')
+    }).catch((err) => {
+      console.error('[WebSocket] Setup failed, falling back to polling:', err)
+      startPolling()
+    })
 
     return () => {
+      if (unsubscribe) {
+        unsubscribe()
+      }
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current)
       }
     }
-  }, [chat.id])
+  }, [chat.id, loadError])
 
   useEffect(() => {
     scrollToBottom()
   }, [messages])
 
-  // Detect events from messages
+  // Detect events from messages and fetch AI suggestions for SUGGEST mode
   useEffect(() => {
     const lastOtherMessage = [...messages].reverse().find((m) => m.sender === "other")
     if (!lastOtherMessage) return
 
+    let eventType: keyof typeof autoReplyOptions | null = null
+
     // Check if event already detected from backend
     if (lastOtherMessage.event?.detected) {
-      setDetectedEvent(lastOtherMessage.event.type)
-      setShowAIPanel(true)
-      return
-    }
-
-    // Client-side event detection fallback
-    for (const [event, keywords] of Object.entries(eventKeywords)) {
-      if (keywords.some((keyword) => lastOtherMessage.content.includes(keyword))) {
-        setDetectedEvent(event as keyof typeof autoReplyOptions)
-        setShowAIPanel(true)
-        break
+      eventType = lastOtherMessage.event.type
+    } else {
+      // Client-side event detection fallback
+      for (const [event, keywords] of Object.entries(eventKeywords)) {
+        if (keywords.some((keyword) => lastOtherMessage.content.includes(keyword))) {
+          eventType = event as keyof typeof autoReplyOptions
+          break
+        }
       }
     }
-  }, [messages])
+
+    if (eventType) {
+      setDetectedEvent(eventType)
+      setShowAIPanel(true)
+
+      // If SUGGEST mode, fetch AI-generated reply suggestions
+      if (settings.replyMode === "suggest") {
+        setIsLoadingSuggestions(true)
+        const chatRoomId = parseInt(chat.id)
+        const currentUserId = localStorage.getItem('userNumericId')
+
+        // Find friend ID from chat members (other person in direct chat)
+        const friendId = chat.members?.find(m => m.id.toString() !== currentUserId)?.id || 1
+
+        aiApi.generateReply({
+          chatRoomId,
+          friendId,
+          eventType
+        }).then(response => {
+          setSuggestReplies(response)
+        }).catch(error => {
+          console.error('Failed to fetch AI suggestions:', error)
+          setSuggestReplies(null)
+        }).finally(() => {
+          setIsLoadingSuggestions(false)
+        })
+      }
+    }
+  }, [messages, settings.replyMode, chat.id, chat.members])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -224,28 +328,46 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     const messageContent = content || inputValue
     if (!messageContent.trim() || isSending) return
 
-    setIsSending(true)
-    try {
-      const chatRoomId = parseInt(chat.id)
-      await messageApi.sendMessage(chatRoomId, {
-        content: messageContent,
-        type: 'TEXT',
-      })
+    const chatRoomId = parseInt(chat.id)
 
-      setInputValue("")
-      setShowCommandMenu(false)
-      setPendingAutoReply(null)
-      setShowAIPanel(false)
-
-      // Refresh messages
-      const apiMessages = await messageApi.getAllMessages(chatRoomId)
-      const userId = localStorage.getItem('userId') || ''
-      setMessages(apiMessages.map(msg => convertToMessage(msg, userId)))
-    } catch (error) {
-      console.error('Failed to send message:', error)
-    } finally {
-      setIsSending(false)
+    // Optimistic UI: Show message immediately (before any async operation)
+    const tempId = `temp-${Date.now()}`
+    const optimisticMessage: Message = {
+      id: tempId,
+      content: messageContent,
+      sender: "me",
+      timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
     }
+    setMessages(prev => [...prev, optimisticMessage])
+    setInputValue("")
+    setShowCommandMenu(false)
+    setPendingAutoReply(null)
+    setShowAIPanel(false)
+    setSuggestReplies(null)
+    setDetectedEvent(null)
+    setIsSending(true)
+    isSendingRef.current = true
+
+    // Send to server in background
+    messageApi.sendMessage(chatRoomId, {
+      content: messageContent,
+      type: 'TEXT',
+    }).then(response => {
+      // Just update the temp ID to real ID - keep the optimistic message visible
+      setMessages(prev => prev.map(msg =>
+        msg.id === tempId ? { ...msg, id: response.id.toString() } : msg
+      ))
+    }).catch(error => {
+      console.error('Failed to send message:', error)
+      // Remove optimistic message on error
+      setMessages(prev => prev.filter(msg => msg.id !== tempId))
+    }).finally(() => {
+      setIsSending(false)
+      // Small delay before re-enabling polling to avoid race conditions
+      setTimeout(() => {
+        isSendingRef.current = false
+      }, 100)
+    })
   }
 
   const handleAutoReply = async () => {
@@ -253,36 +375,51 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
 
     const tone = settings.defaultTone
     const replyText = autoReplyOptions[detectedEvent][tone]
+    const chatRoomId = parseInt(chat.id)
+
+    // Optimistic UI
+    const tempId = `temp-${Date.now()}`
+    const optimisticMessage: Message = {
+      id: tempId,
+      content: replyText,
+      sender: "me",
+      timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      isAutoReply: true,
+    }
+    setMessages(prev => [...prev, optimisticMessage])
+    setPendingAutoReply(null)
+    setShowAIPanel(false)
+    setSuggestReplies(null)
+    setDetectedEvent(null)
 
     setIsSending(true)
     try {
-      const chatRoomId = parseInt(chat.id)
-      await messageApi.sendMessage(chatRoomId, {
+      const response = await messageApi.sendMessage(chatRoomId, {
         content: replyText,
         type: 'TEXT',
         isAutoReply: true
       })
 
-      // Refresh messages
-      const apiMessages = await messageApi.getAllMessages(chatRoomId)
-      const userId = localStorage.getItem('userId') || ''
-      setMessages(apiMessages.map(msg => convertToMessage(msg, userId)))
-      setPendingAutoReply(null)
-      setShowAIPanel(false)
+      setMessages(prev => prev.map(msg =>
+        msg.id === tempId ? { ...msg, id: response.id.toString() } : msg
+      ))
     } catch (error) {
       console.error('Failed to send auto reply:', error)
+      setMessages(prev => prev.filter(msg => msg.id !== tempId))
     } finally {
       setIsSending(false)
     }
   }
 
-  const handleGenerateReply = async (event?: Message["event"]) => {
+  const handleGenerateReply = async (event?: Message["event"], messageId?: string) => {
     setSelectedEvent(event || null)
+    setCurrentEventMessageId(messageId || null)
 
     // Try to generate AI reply from backend
     try {
       const chatRoomId = parseInt(chat.id)
-      const friendId = 1 // This should come from the chat member data
+      const currentUserId = localStorage.getItem('userNumericId')
+      const friendId = chat.members?.find(m => m.id.toString() !== currentUserId)?.id || 1
       const eventType = event?.type || detectedEvent || 'general'
 
       const response = await aiApi.generateReply({
@@ -299,11 +436,18 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     setShowReplyModal(true)
     setPendingAutoReply(null)
     setShowAIPanel(false)
+    setSuggestReplies(null)
   }
 
   const handleSelectReply = (reply: string) => {
-    setInputValue(reply)
+    // AI 답장 선택 시 해당 이벤트 메시지를 replied로 표시
+    if (currentEventMessageId) {
+      setRepliedEventMessageIds(prev => new Set([...prev, currentEventMessageId]))
+    }
+    setCurrentEventMessageId(null)
     setShowReplyModal(false)
+    // 텍스트필드에 표시 (사용자가 확인/수정 후 전송)
+    setInputValue(reply)
     inputRef.current?.focus()
   }
 
@@ -333,6 +477,26 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     return (
       <div className="flex flex-col h-screen items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex flex-col h-screen">
+        <header className="bg-card border-b border-border px-4 py-3 flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={onBack}>
+            <ChevronLeft className="w-5 h-5" />
+          </Button>
+          <h1 className="font-semibold text-foreground">{chat.name}</h1>
+        </header>
+        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+          <X className="w-12 h-12 mb-3 opacity-30" />
+          <p className="text-sm">{loadError}</p>
+          <Button variant="outline" className="mt-4" onClick={onBack}>
+            돌아가기
+          </Button>
+        </div>
       </div>
     )
   }
@@ -388,8 +552,9 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
           </div>
         )}
 
-        {messages.map((message) => (
+        {messages.map((message, index) => (
           <div key={message.id}>
+            {/* 메시지 버블 */}
             <div className={`flex ${message.sender === "me" ? "justify-end" : "justify-start"}`}>
               {message.sender === "other" && (
                 <Avatar className="w-8 h-8 mr-2 shrink-0">
@@ -417,6 +582,78 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
                 </p>
               </div>
             </div>
+
+            {/* 이벤트 감지 인라인 카드 - 상대방 메시지에서 이벤트가 감지된 경우 */}
+            {/* AI를 통해 답장한 경우에만 카드 숨김 */}
+            {message.sender === "other" && message.event?.detected &&
+             !repliedEventMessageIds.has(message.id) && (
+              <div className="mt-3 space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                {/* AI 인사이트 배너 */}
+                {message.insight && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-center">
+                    <span className="text-amber-600 text-sm">⚠️ {message.insight}</span>
+                  </div>
+                )}
+
+                {/* AI 감지 카드 */}
+                <div className="bg-pink-50 border border-pink-100 rounded-2xl p-4">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-full bg-white border border-pink-200 flex items-center justify-center shrink-0">
+                      <Heart className="w-5 h-5 text-pink-500" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm text-muted-foreground">AI 감지</span>
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium">
+                          {message.event.type === "wedding" && "결혼"}
+                          {message.event.type === "birthday" && "생일"}
+                          {message.event.type === "funeral" && "부고"}
+                          {message.event.type === "reunion" && "모임"}
+                        </span>
+                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
+                          {settings.replyMode === "auto" ? "자동" : "선택"}
+                        </span>
+                      </div>
+                      <p className="text-sm text-foreground font-medium">
+                        이벤트가 감지되었습니다. 답장을 생성할까요?
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 축의금/조의금 가이드 */}
+                  {(message.event.type === "wedding" || message.event.type === "funeral") && (
+                    <div className="bg-white/80 rounded-xl px-3 py-2 mb-3 text-center">
+                      <span className="text-sm text-muted-foreground">
+                        💡 {message.event.type === "wedding" ? "축의금" : "조의금"} 가이드: 이 관계면{" "}
+                        <span className="font-medium text-foreground">
+                          {(chat.intimacyScore || 0) >= 70 ? "10만원" : (chat.intimacyScore || 0) >= 40 ? "5만원" : "3만원"}
+                        </span>
+                        이 적당해요
+                      </span>
+                    </div>
+                  )}
+
+                  {/* 답장 생성 버튼 */}
+                  <Button
+                    onClick={() => handleGenerateReply(message.event, message.id)}
+                    className="w-full bg-amber-400 hover:bg-amber-500 text-amber-900 font-medium rounded-xl"
+                    disabled={isLoadingSuggestions}
+                  >
+                    {isLoadingSuggestions ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        생성 중...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4 mr-2" />
+                        답장 생성하기
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
 
@@ -462,105 +699,6 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* AI Panel for event detection */}
-      {showAIPanel && detectedEvent && !pendingAutoReply?.show && (
-        <div className="bg-card border-t border-border animate-in slide-in-from-bottom duration-300">
-          {/* Event Detection Header */}
-          <div className="px-4 py-3 bg-primary/5 border-b border-border flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                {settings.replyMode === "auto" ? (
-                  <Zap className="w-4 h-4 text-primary" />
-                ) : (
-                  <Sparkles className="w-4 h-4 text-primary" />
-                )}
-              </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {detectedEvent === "wedding" && "결혼 이벤트 감지됨"}
-                  {detectedEvent === "birthday" && "생일 이벤트 감지됨"}
-                  {detectedEvent === "funeral" && "부고 이벤트 감지됨"}
-                  {detectedEvent === "reunion" && "오랜만의 연락 감지됨"}
-                  {detectedEvent === "general" && "메시지 감지됨"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {settings.replyMode === "auto" ? "자동 답장이 준비되었습니다" : "AI 추천 답장을 선택해주세요"}
-                </p>
-              </div>
-            </div>
-            <Button variant="ghost" size="icon" onClick={() => setShowAIPanel(false)}>
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-
-          {/* Suggest Mode: Show multiple options */}
-          <div className="p-4 space-y-2">
-            <button
-              onClick={() => handleSendMessage(autoReplyOptions[detectedEvent].polite)}
-              className="w-full p-3 bg-secondary hover:bg-accent rounded-xl text-left transition-colors"
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
-                  <Smile className="w-3 h-3 text-green-600" />
-                </div>
-                <span className="font-medium text-xs text-foreground">정중한 타입</span>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">{autoReplyOptions[detectedEvent].polite}</p>
-            </button>
-
-            <button
-              onClick={() => handleSendMessage(autoReplyOptions[detectedEvent].friendly)}
-              className="w-full p-3 bg-secondary hover:bg-accent rounded-xl text-left transition-colors"
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-6 h-6 rounded-full bg-pink-100 flex items-center justify-center">
-                  <Heart className="w-3 h-3 text-pink-600" />
-                </div>
-                <span className="font-medium text-xs text-foreground">친근한 타입</span>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">{autoReplyOptions[detectedEvent].friendly}</p>
-            </button>
-
-            <button
-              onClick={() => handleSendMessage(autoReplyOptions[detectedEvent].formal)}
-              className="w-full p-3 bg-secondary hover:bg-accent rounded-xl text-left transition-colors"
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center">
-                  <Briefcase className="w-3 h-3 text-blue-600" />
-                </div>
-                <span className="font-medium text-xs text-foreground">공식적 타입</span>
-              </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">{autoReplyOptions[detectedEvent].formal}</p>
-            </button>
-
-            <button
-              onClick={() => handleGenerateReply()}
-              className="w-full p-3 bg-primary/10 hover:bg-primary/20 rounded-xl text-left transition-colors border border-primary/20"
-            >
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-primary" />
-                <span className="font-medium text-sm text-primary">AI로 더 맞춤 답장 생성하기</span>
-              </div>
-            </button>
-          </div>
-
-          {/* Money Guide for special events */}
-          {(detectedEvent === "wedding" || detectedEvent === "funeral") && (
-            <div className="px-4 pb-4">
-              <div className="bg-accent/50 rounded-xl p-3 text-center">
-                <p className="text-xs text-muted-foreground">
-                  💡{" "}
-                  {detectedEvent === "wedding"
-                    ? "축의금 가이드: 이 관계면 5만원이 적당해요"
-                    : "조의금 가이드: 이 관계면 3만원이 적당해요"}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Command Menu */}
       {showCommandMenu && (
         <div className="bg-card border-t border-border p-2 animate-in slide-in-from-bottom duration-200">
@@ -595,29 +733,27 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
       )}
 
       {/* Input */}
-      {!showAIPanel && (
-        <div className="bg-card border-t border-border px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Input
-              ref={inputRef}
-              value={inputValue}
-              onChange={handleInputChange}
-              onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-              placeholder="@카톡사이 입력하여 AI 도움받기"
-              className="flex-1 bg-secondary border-0 rounded-full px-4"
-              disabled={isSending}
-            />
-            <Button
-              onClick={() => handleSendMessage()}
-              size="icon"
-              className="shrink-0 rounded-full bg-primary hover:bg-primary/90"
-              disabled={isSending}
-            >
-              {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            </Button>
-          </div>
+      <div className="bg-card border-t border-border px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Input
+            ref={inputRef}
+            value={inputValue}
+            onChange={handleInputChange}
+            onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+            placeholder="채팅"
+            className="flex-1 bg-secondary border-0 rounded-full px-4"
+            disabled={isSending}
+          />
+          <Button
+            onClick={() => handleSendMessage()}
+            size="icon"
+            className="shrink-0 rounded-full bg-primary hover:bg-primary/90"
+            disabled={isSending}
+          >
+            {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          </Button>
         </div>
-      )}
+      </div>
 
       {/* AI Reply Modal */}
       <AIReplyModal
