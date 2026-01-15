@@ -244,26 +244,41 @@ public class AIService {
         String prompt = String.format(
                 REPLY_GENERATION_PROMPT,
                 userName,           // 사용자 이름
-                userStyleMessages,  // 사용자의 과거 메시지들 (스타일 학습)
+                userStyleMessages.isEmpty() ? "(메시지 없음)" : userStyleMessages,  // 사용자의 과거 메시지들 (스타일 학습)
                 eventType,          // 이벤트 유형
                 intimacyScore,      // 친밀도
                 relationshipAnalysis.summary(),  // 관계 분석
-                recentChat          // 최근 대화 맥락
+                recentChat.isEmpty() ? "(대화 없음)" : recentChat          // 최근 대화 맥락
         );
 
+        log.info("=== AI Reply Generation ===");
+        log.info("User: {}, Event: {}, Intimacy: {}", userName, eventType, intimacyScore);
+        log.info("User messages count: {}", userMessages.size());
+        log.info("Recent chat: {}", recentChat.length() > 100 ? recentChat.substring(0, 100) + "..." : recentChat);
+
         String response = openAIClient.chat("", prompt);
+
+        log.info("OpenAI response: {}", response != null ? response.substring(0, Math.min(200, response.length())) + "..." : "NULL");
 
         // 사용자 스타일 분석 (fallback용)
         UserStyle userStyle = analyzeUserStyle(userMessages);
 
         if (response == null) {
+            log.warn("OpenAI returned null, using fallback");
             return getDefaultReplyResult(eventType, intimacyScore, userStyle);
         }
 
         try {
-            return objectMapper.readValue(response, ReplyGenerationResult.class);
+            // JSON 추출 (마크다운 코드 블록 제거)
+            String jsonResponse = extractJson(response);
+            log.info("Extracted JSON: {}", jsonResponse.substring(0, Math.min(200, jsonResponse.length())) + "...");
+
+            ReplyGenerationResult result = objectMapper.readValue(jsonResponse, ReplyGenerationResult.class);
+            log.info("Successfully parsed AI response with {} replies", result.replies() != null ? result.replies().size() : 0);
+            return result;
         } catch (JsonProcessingException e) {
-            log.error("Failed to parse reply generation response", e);
+            log.error("Failed to parse reply generation response: {}", e.getMessage());
+            log.error("Raw response was: {}", response);
             return getDefaultReplyResult(eventType, intimacyScore, userStyle);
         }
     }
@@ -430,6 +445,40 @@ public class AIService {
                             msg.getCreatedAt().toString(), sender, msg.getContent());
                 })
                 .collect(Collectors.joining("\n"));
+    }
+
+    /**
+     * OpenAI 응답에서 JSON 추출 (마크다운 코드 블록 제거)
+     */
+    private String extractJson(String response) {
+        if (response == null) return "";
+
+        String trimmed = response.trim();
+
+        // ```json ... ``` 형식 처리
+        if (trimmed.startsWith("```json")) {
+            trimmed = trimmed.substring(7);
+            if (trimmed.endsWith("```")) {
+                trimmed = trimmed.substring(0, trimmed.length() - 3);
+            }
+        }
+        // ``` ... ``` 형식 처리
+        else if (trimmed.startsWith("```")) {
+            trimmed = trimmed.substring(3);
+            if (trimmed.endsWith("```")) {
+                trimmed = trimmed.substring(0, trimmed.length() - 3);
+            }
+        }
+
+        // { 로 시작하는 부분 찾기
+        int jsonStart = trimmed.indexOf('{');
+        int jsonEnd = trimmed.lastIndexOf('}');
+
+        if (jsonStart != -1 && jsonEnd != -1 && jsonEnd > jsonStart) {
+            return trimmed.substring(jsonStart, jsonEnd + 1);
+        }
+
+        return trimmed.trim();
     }
 
     private RelationshipAnalysis getDefaultRelationshipAnalysis() {
