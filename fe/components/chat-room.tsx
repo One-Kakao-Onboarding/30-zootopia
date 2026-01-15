@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useRef, useEffect } from "react"
-import { Send, ChevronLeft, MoreVertical, Sparkles, Zap, LogOut, Loader2, Smile, Heart, Briefcase, X } from "lucide-react"
+import { Send, ChevronLeft, MoreVertical, Sparkles, LogOut, Loader2, Heart, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -46,33 +46,8 @@ const eventKeywords = {
   reunion: ["오랜만", "연락 안 했", "잘 지냈"],
 }
 
-const autoReplyOptions = {
-  wedding: {
-    polite: "와 정말 축하해! 너무 기쁜 소식이다 😊 당연히 갈게! 청첩장 보내줘~",
-    friendly: "헐 대박!! 축하해 친구야!! 🎉💕 꼭 갈게 진짜!! 신랑/신부 누구야?!",
-    formal: "결혼 축하해. 그날 일정 확인해보고 연락할게.",
-  },
-  birthday: {
-    polite: "생일 축하해! 좋은 하루 보내 🎂",
-    friendly: "생일 축하해!! 🎉🎈 올해도 건강하고 행복하자!",
-    formal: "생일 축하드립니다. 좋은 한 해 되세요.",
-  },
-  funeral: {
-    polite: "정말 안타깝네. 삼가 고인의 명복을 빕니다.",
-    friendly: "많이 힘들겠다... 옆에 있어줄게. 필요한 거 있으면 말해.",
-    formal: "깊은 위로의 말씀을 전합니다. 삼가 고인의 명복을 빕니다.",
-  },
-  reunion: {
-    polite: "오랜만이야! 잘 지냈어? 반가워 😊",
-    friendly: "헐 진짜 오랜만!! 어떻게 지냈어?! 😄",
-    formal: "오랜만이네요. 잘 지내셨나요?",
-  },
-  general: {
-    polite: "응 알겠어!",
-    friendly: "ㅇㅋㅇㅋ!!",
-    formal: "네, 알겠습니다.",
-  },
-}
+const eventTypes = ["wedding", "birthday", "funeral", "reunion", "general"] as const
+type EventType = typeof eventTypes[number]
 
 function formatTimestamp(dateString: string): string {
   const date = new Date(dateString)
@@ -115,9 +90,8 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
   const [showCommandMenu, setShowCommandMenu] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<Message["event"] | null>(null)
   const [currentEventMessageId, setCurrentEventMessageId] = useState<string | null>(null)
-  const [pendingAutoReply, setPendingAutoReply] = useState<{ event?: Message["event"]; show: boolean } | null>(null)
   const [showAIPanel, setShowAIPanel] = useState(false)
-  const [detectedEvent, setDetectedEvent] = useState<keyof typeof autoReplyOptions | null>(null)
+  const [detectedEvent, setDetectedEvent] = useState<EventType | null>(null)
   const [suggestReplies, setSuggestReplies] = useState<AIReplyResponse | null>(null)
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false)
   const [repliedEventMessageIds, setRepliedEventMessageIds] = useState<Set<string>>(new Set())
@@ -239,12 +213,12 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     scrollToBottom()
   }, [messages])
 
-  // Detect events from messages and fetch AI suggestions for SUGGEST mode
+  // Detect events from messages
   useEffect(() => {
     const lastOtherMessage = [...messages].reverse().find((m) => m.sender === "other")
     if (!lastOtherMessage) return
 
-    let eventType: keyof typeof autoReplyOptions | null = null
+    let eventType: EventType | null = null
 
     // Check if event already detected from backend
     if (lastOtherMessage.event?.detected) {
@@ -253,7 +227,7 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
       // Client-side event detection fallback
       for (const [event, keywords] of Object.entries(eventKeywords)) {
         if (keywords.some((keyword) => lastOtherMessage.content.includes(keyword))) {
-          eventType = event as keyof typeof autoReplyOptions
+          eventType = event as EventType
           break
         }
       }
@@ -262,31 +236,8 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     if (eventType) {
       setDetectedEvent(eventType)
       setShowAIPanel(true)
-
-      // If SUGGEST mode, fetch AI-generated reply suggestions
-      if (settings.replyMode === "suggest") {
-        setIsLoadingSuggestions(true)
-        const chatRoomId = parseInt(chat.id)
-        const currentUserId = localStorage.getItem('userNumericId')
-
-        // Find friend ID from chat members (other person in direct chat)
-        const friendId = chat.members?.find(m => m.id.toString() !== currentUserId)?.id || 1
-
-        aiApi.generateReply({
-          chatRoomId,
-          friendId,
-          eventType
-        }).then(response => {
-          setSuggestReplies(response)
-        }).catch(error => {
-          console.error('Failed to fetch AI suggestions:', error)
-          setSuggestReplies(null)
-        }).finally(() => {
-          setIsLoadingSuggestions(false)
-        })
-      }
     }
-  }, [messages, settings.replyMode, chat.id, chat.members])
+  }, [messages])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -329,7 +280,6 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     setMessages(prev => [...prev, optimisticMessage])
     setInputValue("")
     setShowCommandMenu(false)
-    setPendingAutoReply(null)
     setShowAIPanel(false)
     setSuggestReplies(null)
     setDetectedEvent(null)
@@ -358,47 +308,6 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     })
   }
 
-  const handleAutoReply = async () => {
-    if (!detectedEvent) return
-
-    const tone = settings.defaultTone
-    const replyText = autoReplyOptions[detectedEvent][tone]
-    const chatRoomId = parseInt(chat.id)
-
-    // Optimistic UI
-    const tempId = `temp-${Date.now()}`
-    const optimisticMessage: Message = {
-      id: tempId,
-      content: replyText,
-      sender: "me",
-      timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
-      isAutoReply: true,
-    }
-    setMessages(prev => [...prev, optimisticMessage])
-    setPendingAutoReply(null)
-    setShowAIPanel(false)
-    setSuggestReplies(null)
-    setDetectedEvent(null)
-
-    setIsSending(true)
-    try {
-      const response = await messageApi.sendMessage(chatRoomId, {
-        content: replyText,
-        type: 'TEXT',
-        isAutoReply: true
-      })
-
-      setMessages(prev => prev.map(msg =>
-        msg.id === tempId ? { ...msg, id: response.id.toString() } : msg
-      ))
-    } catch (error) {
-      console.error('Failed to send auto reply:', error)
-      setMessages(prev => prev.filter(msg => msg.id !== tempId))
-    } finally {
-      setIsSending(false)
-    }
-  }
-
   const handleGenerateReply = async (event?: Message["event"], messageId?: string) => {
     setSelectedEvent(event || null)
     setCurrentEventMessageId(messageId || null)
@@ -422,7 +331,6 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     }
 
     setShowReplyModal(true)
-    setPendingAutoReply(null)
     setShowAIPanel(false)
     setSuggestReplies(null)
   }
@@ -598,9 +506,6 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
                           {message.event.type === "funeral" && "부고"}
                           {message.event.type === "reunion" && "모임"}
                         </span>
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-full">
-                          {settings.replyMode === "auto" ? "자동" : "선택"}
-                        </span>
                       </div>
                       <p className="text-sm text-foreground font-medium">
                         이벤트가 감지되었습니다. 답장을 생성할까요?
@@ -644,45 +549,6 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
             )}
           </div>
         ))}
-
-        {pendingAutoReply?.show && (
-          <div className="bg-primary/10 border border-primary/30 rounded-2xl p-4 animate-in fade-in slide-in-from-bottom-2">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                <Zap className="w-5 h-5 text-primary" />
-              </div>
-              <div className="flex-1">
-                <p className="font-medium text-sm text-foreground">자동 답장 대기 중</p>
-                <p className="text-xs text-muted-foreground">
-                  친밀도 {chat.intimacyScore}점 -{" "}
-                  {settings.defaultTone === "polite"
-                    ? "정중한"
-                    : settings.defaultTone === "friendly"
-                      ? "친근한"
-                      : "공식적"}{" "}
-                  어조로 답장됩니다
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={handleAutoReply} className="flex-1 bg-primary hover:bg-primary/90" size="sm" disabled={isSending}>
-                <Zap className="w-4 h-4 mr-1" />
-                자동 답장 보내기
-              </Button>
-              <Button
-                onClick={() => {
-                  setPendingAutoReply(null)
-                  handleGenerateReply(pendingAutoReply.event)
-                }}
-                variant="outline"
-                className="flex-1"
-                size="sm"
-              >
-                직접 선택하기
-              </Button>
-            </div>
-          </div>
-        )}
 
         <div ref={messagesEndRef} />
       </div>

@@ -1,9 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { X, Smile, Heart, Briefcase, Zap, Loader2, Sparkles } from "lucide-react"
+import { X, Smile, Heart, Briefcase } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Switch } from "@/components/ui/switch"
 import type { AIReplyResponse } from "@/lib/api"
 
 interface AIReplyModalProps {
@@ -42,89 +40,86 @@ const replyOptions = {
   },
 }
 
-const toneIcons = {
-  polite: { icon: Smile, color: "green", label: "정중한 타입" },
-  friendly: { icon: Heart, color: "pink", label: "친근한 타입" },
-  formal: { icon: Briefcase, color: "blue", label: "공식적 타입" },
+// 타입별 스타일 설정
+const toneStyles = {
+  polite: {
+    icon: Smile,
+    label: "정중한 타입",
+    bgColor: "bg-green-50",
+    iconBg: "bg-green-100",
+    iconColor: "text-green-500",
+  },
+  friendly: {
+    icon: Heart,
+    label: "친근한 타입",
+    bgColor: "bg-pink-50",
+    iconBg: "bg-pink-100",
+    iconColor: "text-pink-500",
+  },
+  formal: {
+    icon: Briefcase,
+    label: "공식적 타입",
+    bgColor: "bg-blue-50",
+    iconBg: "bg-blue-100",
+    iconColor: "text-blue-500",
+  },
 }
 
 // 한국어 tone을 영어 키로 매핑
-const koreanToneMap: Record<string, keyof typeof toneIcons> = {
+const koreanToneMap: Record<string, keyof typeof toneStyles> = {
   "정중한": "polite",
   "친근한": "friendly",
   "공식적": "formal",
-  // 백엔드에서 오는 tone 값 매핑
-  "사용자 스타일 (기본)": "polite",
-  "조금 더 격식있게": "formal",
-  "조금 더 친근하게": "friendly",
 }
 
 export function AIReplyModal({ isOpen, onClose, onSelectReply, eventType = "general", aiReplies }: AIReplyModalProps) {
-  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
   const fallbackReplies = replyOptions[eventType]
 
   if (!isOpen) return null
 
-  // Use AI-generated replies if available, otherwise use fallback
   const hasAiReplies = aiReplies && aiReplies.replies && aiReplies.replies.length > 0
 
+  // AI 응답을 정렬해서 정중한, 친근한, 공식적 순서로 표시
+  const sortedReplies = hasAiReplies
+    ? [...aiReplies.replies].sort((a, b) => {
+        const order = ["정중한", "친근한", "공식적"]
+        return order.indexOf(a.tone) - order.indexOf(b.tone)
+      })
+    : null
+
   return (
-    <div className="fixed inset-0 bg-foreground/50 z-50 flex items-end justify-center">
-      <div className="bg-card w-full max-w-md rounded-t-3xl animate-in slide-in-from-bottom duration-300">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
+      <div className="bg-background w-full max-w-md rounded-t-3xl animate-in slide-in-from-bottom duration-300">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" />
-            <h2 className="text-lg font-semibold text-foreground">AI 답장 선택</h2>
-          </div>
+          <h2 className="text-lg font-bold text-foreground">AI 답장 선택</h2>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="w-5 h-5" />
           </Button>
         </div>
 
-        {/* AI Insight */}
-        {hasAiReplies && aiReplies.aiInsight && (
-          <div className="px-4 pt-4">
-            <div className="bg-primary/5 border border-primary/20 rounded-xl p-3">
-              <p className="text-sm text-foreground">{aiReplies.aiInsight}</p>
-            </div>
-          </div>
-        )}
-
         {/* Reply Options */}
         <div className="p-4 space-y-3">
-          {hasAiReplies ? (
+          {sortedReplies ? (
             // AI-generated replies from backend
-            aiReplies.replies.map((reply, index) => {
-              // 한국어 또는 영어 tone 모두 지원
-              const toneKey = koreanToneMap[reply.tone] || (reply.tone.toLowerCase() as keyof typeof toneIcons)
-              const toneConfig = toneIcons[toneKey] || toneIcons.polite
-              const Icon = toneConfig.icon
-              const isRecommended = index === aiReplies.recommendedIndex
+            sortedReplies.map((reply, index) => {
+              const toneKey = koreanToneMap[reply.tone] || "polite"
+              const style = toneStyles[toneKey]
+              const Icon = style.icon
 
               return (
                 <button
                   key={index}
                   onClick={() => onSelectReply(reply.message)}
-                  className={`w-full p-4 rounded-2xl text-left transition-colors group ${
-                    isRecommended
-                      ? 'bg-primary/10 hover:bg-primary/15 border-2 border-primary/30'
-                      : 'bg-secondary hover:bg-accent'
-                  }`}
+                  className={`w-full p-4 rounded-2xl text-left transition-all hover:scale-[1.02] active:scale-[0.98] ${style.bgColor}`}
                 >
                   <div className="flex items-center gap-3 mb-2">
-                    <div className={`w-8 h-8 rounded-full bg-${toneConfig.color}-100 flex items-center justify-center`}>
-                      <Icon className={`w-4 h-4 text-${toneConfig.color}-600`} />
+                    <div className={`w-10 h-10 rounded-full ${style.iconBg} flex items-center justify-center`}>
+                      <Icon className={`w-5 h-5 ${style.iconColor}`} />
                     </div>
-                    <span className="font-medium text-sm text-foreground">{toneConfig.label}</span>
-                    {isRecommended && (
-                      <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">추천</span>
-                    )}
+                    <span className="font-semibold text-foreground">{style.label}</span>
                   </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{reply.message}</p>
-                  {reply.explanation && (
-                    <p className="text-xs text-muted-foreground mt-2 opacity-70">{reply.explanation}</p>
-                  )}
+                  <p className="text-sm text-foreground/80 leading-relaxed pl-1">{reply.message}</p>
                 </button>
               )
             })
@@ -133,61 +128,48 @@ export function AIReplyModal({ isOpen, onClose, onSelectReply, eventType = "gene
             <>
               <button
                 onClick={() => onSelectReply(fallbackReplies.polite)}
-                className="w-full p-4 bg-secondary hover:bg-accent rounded-2xl text-left transition-colors group"
+                className="w-full p-4 bg-green-50 hover:scale-[1.02] active:scale-[0.98] rounded-2xl text-left transition-all"
               >
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-                    <Smile className="w-4 h-4 text-green-600" />
+                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                    <Smile className="w-5 h-5 text-green-500" />
                   </div>
-                  <span className="font-medium text-sm text-foreground">정중한 타입</span>
+                  <span className="font-semibold text-foreground">정중한 타입</span>
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">{fallbackReplies.polite}</p>
+                <p className="text-sm text-foreground/80 leading-relaxed pl-1">{fallbackReplies.polite}</p>
               </button>
 
               <button
                 onClick={() => onSelectReply(fallbackReplies.friendly)}
-                className="w-full p-4 bg-secondary hover:bg-accent rounded-2xl text-left transition-colors group"
+                className="w-full p-4 bg-pink-50 hover:scale-[1.02] active:scale-[0.98] rounded-2xl text-left transition-all"
               >
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center">
-                    <Heart className="w-4 h-4 text-pink-600" />
+                  <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center">
+                    <Heart className="w-5 h-5 text-pink-500" />
                   </div>
-                  <span className="font-medium text-sm text-foreground">친근한 타입</span>
+                  <span className="font-semibold text-foreground">친근한 타입</span>
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">{fallbackReplies.friendly}</p>
+                <p className="text-sm text-foreground/80 leading-relaxed pl-1">{fallbackReplies.friendly}</p>
               </button>
 
               <button
                 onClick={() => onSelectReply(fallbackReplies.formal)}
-                className="w-full p-4 bg-secondary hover:bg-accent rounded-2xl text-left transition-colors group"
+                className="w-full p-4 bg-blue-50 hover:scale-[1.02] active:scale-[0.98] rounded-2xl text-left transition-all"
               >
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                    <Briefcase className="w-4 h-4 text-blue-600" />
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                    <Briefcase className="w-5 h-5 text-blue-500" />
                   </div>
-                  <span className="font-medium text-sm text-foreground">공식적 타입</span>
+                  <span className="font-semibold text-foreground">공식적 타입</span>
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">{fallbackReplies.formal}</p>
+                <p className="text-sm text-foreground/80 leading-relaxed pl-1">{fallbackReplies.formal}</p>
               </button>
             </>
           )}
         </div>
 
-        {/* Auto Reply Toggle */}
-        <div className="px-4 pb-6">
-          <div className="flex items-center justify-between p-4 bg-accent/50 rounded-2xl">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                <Zap className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <p className="font-medium text-sm text-foreground">완전 자동 답장 모드</p>
-                <p className="text-xs text-muted-foreground">친밀도 20점 미만에게 자동 응답</p>
-              </div>
-            </div>
-            <Switch checked={autoReplyEnabled} onCheckedChange={setAutoReplyEnabled} />
-          </div>
-        </div>
+        {/* Bottom padding */}
+        <div className="pb-6" />
       </div>
     </div>
   )

@@ -46,8 +46,7 @@ export interface UpdateUserRequest {
 }
 
 export interface UpdateSettingsRequest {
-  replyMode?: 'AUTO' | 'SUGGEST';
-  autoReplyThreshold?: number;
+  replyMode?: 'SUGGEST';
   defaultTone?: 'POLITE' | 'FRIENDLY' | 'FORMAL';
   notificationsEnabled?: boolean;
   soundEnabled?: boolean;

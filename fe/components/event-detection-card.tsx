@@ -1,12 +1,11 @@
 "use client"
 
-import { Heart, Cake, Flower2, Users, Sparkles, Zap } from "lucide-react"
+import { Heart, Cake, Flower2, Users, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface EventDetectionCardProps {
   eventType: "wedding" | "birthday" | "funeral" | "reunion" | "general"
   onGenerateReply: () => void
-  replyMode?: "auto" | "suggest"
 }
 
 const eventConfig = {
@@ -47,7 +46,7 @@ const eventConfig = {
   },
 }
 
-export function EventDetectionCard({ eventType, onGenerateReply, replyMode = "suggest" }: EventDetectionCardProps) {
+export function EventDetectionCard({ eventType, onGenerateReply }: EventDetectionCardProps) {
   const config = eventConfig[eventType]
   const Icon = config.icon
 
@@ -64,22 +63,13 @@ export function EventDetectionCard({ eventType, onGenerateReply, replyMode = "su
               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${config.bgColor} ${config.color}`}>
                 {config.label}
               </span>
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full ${
-                  replyMode === "auto" ? "bg-primary/20 text-primary" : "bg-secondary text-muted-foreground"
-                }`}
-              >
-                {replyMode === "auto" ? "자동" : "선택"}
-              </span>
             </div>
             <p className="text-sm font-medium text-foreground mb-2">
-              {replyMode === "auto"
-                ? "이벤트가 감지되었습니다. 자동 답장이 준비되었어요."
-                : "이벤트가 감지되었습니다. 답장을 생성할까요?"}
+              이벤트가 감지되었습니다. 답장을 생성할까요?
             </p>
             {config.suggestion && (
               <p className="text-xs text-muted-foreground mb-3 bg-card/50 rounded-lg px-2 py-1.5">
-                💡 {config.suggestion}
+                {config.suggestion}
               </p>
             )}
             <Button
@@ -87,17 +77,8 @@ export function EventDetectionCard({ eventType, onGenerateReply, replyMode = "su
               size="sm"
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg"
             >
-              {replyMode === "auto" ? (
-                <>
-                  <Zap className="w-4 h-4 mr-2" />
-                  답장 옵션 보기
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  답장 생성하기
-                </>
-              )}
+              <Sparkles className="w-4 h-4 mr-2" />
+              답장 생성하기
             </Button>
           </div>
         </div>

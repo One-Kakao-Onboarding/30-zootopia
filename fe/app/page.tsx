@@ -173,8 +173,7 @@ export default function Home() {
     try {
       console.log('[Settings] Saving settings:', toSave)
       await userApi.updateSettings({
-        replyMode: toSave.replyMode.toUpperCase() as 'AUTO' | 'SUGGEST',
-        autoReplyThreshold: toSave.autoReplyThreshold,
+        replyMode: 'SUGGEST',
         defaultTone: toSave.defaultTone.toUpperCase() as 'POLITE' | 'FRIENDLY' | 'FORMAL',
       })
       console.log('[Settings] Settings saved successfully')
