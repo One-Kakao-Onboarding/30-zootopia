@@ -1,10 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { Search, X } from "lucide-react"
+import { Search, X, Users } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
+import { RelationshipModal } from "@/components/relationship-modal"
 import type { ChatPreview, Friend } from "@/app/page"
 
 interface FriendsListProps {
@@ -59,6 +60,7 @@ const friends: Friend[] = [
 export function FriendsList({ onSelectChat }: FriendsListProps) {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [showRelationshipModal, setShowRelationshipModal] = useState(false)
 
   const filteredFriends = friends.filter(
     (friend) =>
@@ -104,9 +106,14 @@ export function FriendsList({ onSelectChat }: FriendsListProps) {
         ) : (
           <>
             <h1 className="text-xl font-bold text-foreground">친구</h1>
-            <Button variant="ghost" size="icon" onClick={() => setIsSearchOpen(true)}>
-              <Search className="w-5 h-5" />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" onClick={() => setShowRelationshipModal(true)}>
+                <Users className="w-5 h-5" />
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setIsSearchOpen(true)}>
+                <Search className="w-5 h-5" />
+              </Button>
+            </div>
           </>
         )}
       </header>
@@ -163,6 +170,8 @@ export function FriendsList({ onSelectChat }: FriendsListProps) {
           </div>
         )}
       </div>
+
+      <RelationshipModal isOpen={showRelationshipModal} onClose={() => setShowRelationshipModal(false)} />
     </div>
   )
 }
