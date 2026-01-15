@@ -62,7 +62,7 @@ export function FriendsList({ onSelectChat }: FriendsListProps) {
       const chatRooms = await chatRoomApi.getAll()
       let existingRoom = chatRooms.find(room =>
         room.type === 'direct' &&
-        room.members.some(m => m.id.toString() === friend.id)
+        room.members?.some(m => m.id.toString() === friend.id)
       )
 
       if (existingRoom) {
@@ -92,15 +92,24 @@ export function FriendsList({ onSelectChat }: FriendsListProps) {
       }
     } catch (error) {
       console.error('Failed to open chat:', error)
-      // Fallback to simple chat preview
-      onSelectChat({
-        id: friend.id,
-        name: friend.name,
-        avatar: friend.avatar,
-        lastMessage: "",
-        timestamp: "",
-        intimacyScore: friend.intimacyScore,
-      })
+      // Try to create a new chat room as fallback
+      try {
+        const newRoom = await chatRoomApi.create({
+          type: 'DIRECT',
+          memberIds: [parseInt(friend.id)]
+        })
+        onSelectChat({
+          id: newRoom.id.toString(),
+          name: newRoom.name || friend.name,
+          avatar: newRoom.avatar || friend.avatar,
+          lastMessage: "",
+          timestamp: "",
+          intimacyScore: friend.intimacyScore,
+        })
+      } catch (createError) {
+        console.error('Failed to create chat room:', createError)
+        alert('채팅방을 열 수 없습니다.')
+      }
     }
   }
 

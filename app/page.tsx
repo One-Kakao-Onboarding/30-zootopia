@@ -31,7 +31,7 @@ interface UserContextType {
 interface SettingsContextType {
   settings: AppSettings
   updateSettings: (settings: Partial<AppSettings>) => void
-  saveSettings: () => Promise<void>
+  saveSettings: (settingsToSave?: AppSettings) => Promise<void>
 }
 
 export const SettingsContext = createContext<SettingsContextType | null>(null)
@@ -57,6 +57,12 @@ export interface ChatPreview {
   timestamp: string
   unread?: number
   intimacyScore?: number
+  members?: Array<{
+    id: number
+    name: string
+    avatar: string
+    role: string
+  }>
 }
 
 export interface Friend {
@@ -93,6 +99,7 @@ function convertToChatPreview(chatRoom: ChatRoomResponse): ChatPreview {
     timestamp: chatRoom.lastMessageAt ? formatTimestamp(chatRoom.lastMessageAt) : '',
     unread: chatRoom.unreadCount,
     intimacyScore: chatRoom.intimacyScore,
+    members: chatRoom.members,
   }
 }
 
@@ -116,8 +123,8 @@ export default function Home() {
   useEffect(() => {
     const checkSession = async () => {
       const session = getSession()
-      if (session.userId && session.token) {
-        setUserId(session.userId)
+      if (session.userId !== null && session.token) {
+        setUserId(session.userIdStr)
         setIsLoggedIn(true)
         try {
           // Load settings
@@ -136,10 +143,11 @@ export default function Home() {
     checkSession()
   }, [])
 
-  // Load chats when logged in
+  // Load chats when logged in and poll for updates
   useEffect(() => {
+    if (!isLoggedIn) return
+
     const loadChats = async () => {
-      if (!isLoggedIn) return
       try {
         const chatRooms = await chatRoomApi.getAll()
         setChats(chatRooms.map(convertToChatPreview))
@@ -147,22 +155,31 @@ export default function Home() {
         console.error('Failed to load chats:', error)
       }
     }
+
     loadChats()
+
+    // Poll for chat updates every 1 second
+    const interval = setInterval(loadChats, 1000)
+
+    return () => clearInterval(interval)
   }, [isLoggedIn])
 
   const updateSettings = (newSettings: Partial<AppSettings>) => {
     setSettings((prev) => ({ ...prev, ...newSettings }))
   }
 
-  const saveSettings = async () => {
+  const saveSettings = async (settingsToSave?: AppSettings) => {
+    const toSave = settingsToSave || settings
     try {
+      console.log('[Settings] Saving settings:', toSave)
       await userApi.updateSettings({
-        replyMode: settings.replyMode.toUpperCase() as 'AUTO' | 'SUGGEST',
-        autoReplyThreshold: settings.autoReplyThreshold,
-        defaultTone: settings.defaultTone.toUpperCase() as 'POLITE' | 'FRIENDLY' | 'FORMAL',
+        replyMode: toSave.replyMode.toUpperCase() as 'AUTO' | 'SUGGEST',
+        autoReplyThreshold: toSave.autoReplyThreshold,
+        defaultTone: toSave.defaultTone.toUpperCase() as 'POLITE' | 'FRIENDLY' | 'FORMAL',
       })
+      console.log('[Settings] Settings saved successfully')
     } catch (error) {
-      console.error('Failed to save settings:', error)
+      console.error('[Settings] Failed to save settings:', error)
     }
   }
 
