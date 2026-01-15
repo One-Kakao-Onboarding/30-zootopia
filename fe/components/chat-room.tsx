@@ -396,7 +396,7 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
             isSendingRef.current = false
           }, 100)
         })
-        }, 1500) // 1.5초 딜레이
+        }, 5000) // 5초 딜레이
       }
     }
 
