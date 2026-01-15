@@ -48,6 +48,13 @@ const toneIcons = {
   formal: { icon: Briefcase, color: "blue", label: "공식적 타입" },
 }
 
+// 한국어 tone을 영어 키로 매핑
+const koreanToneMap: Record<string, keyof typeof toneIcons> = {
+  "정중한": "polite",
+  "친근한": "friendly",
+  "공식적": "formal",
+}
+
 export function AIReplyModal({ isOpen, onClose, onSelectReply, eventType = "general", aiReplies }: AIReplyModalProps) {
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false)
   const fallbackReplies = replyOptions[eventType]
@@ -85,7 +92,8 @@ export function AIReplyModal({ isOpen, onClose, onSelectReply, eventType = "gene
           {hasAiReplies ? (
             // AI-generated replies from backend
             aiReplies.replies.map((reply, index) => {
-              const toneKey = reply.tone.toLowerCase() as keyof typeof toneIcons
+              // 한국어 또는 영어 tone 모두 지원
+              const toneKey = koreanToneMap[reply.tone] || (reply.tone.toLowerCase() as keyof typeof toneIcons)
               const toneConfig = toneIcons[toneKey] || toneIcons.polite
               const Icon = toneConfig.icon
               const isRecommended = index === aiReplies.recommendedIndex
