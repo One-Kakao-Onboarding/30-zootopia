@@ -303,6 +303,8 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
 
   // Auto-reply check - 완전 자동 모드에서 AI 기반 답장 보내기
   useEffect(() => {
+    let autoReplyTimeout: NodeJS.Timeout | null = null
+
     if (settings.replyMode === "auto" && chat.intimacyScore !== undefined && detectedEvent) {
       const eventMessage = messages.find((m) => m.event?.detected)
       const hasMyReply = messages.some((m) => m.sender === "me")
@@ -312,13 +314,15 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
         const currentUserId = localStorage.getItem('userNumericId')
         const friendId = chat.members?.find(m => m.id.toString() !== currentUserId)?.id || 1
 
-        setIsSending(true)
-        isSendingRef.current = true
-        setPendingAutoReply(null)
-        setShowAIPanel(false)
+        // 메시지 동기화를 위해 1.5초 딜레이 후 자동 답장
+        autoReplyTimeout = setTimeout(() => {
+          setIsSending(true)
+          isSendingRef.current = true
+          setPendingAutoReply(null)
+          setShowAIPanel(false)
 
-        // AI API 호출해서 대화 기반 답장 생성
-        aiApi.autoReply({
+          // AI API 호출해서 대화 기반 답장 생성
+          aiApi.autoReply({
           chatRoomId,
           friendId,
           eventType: detectedEvent
@@ -392,6 +396,13 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
             isSendingRef.current = false
           }, 100)
         })
+        }, 1500) // 1.5초 딜레이
+      }
+    }
+
+    return () => {
+      if (autoReplyTimeout) {
+        clearTimeout(autoReplyTimeout)
       }
     }
   }, [settings.replyMode, settings.autoReplyThreshold, settings.defaultTone, chat.intimacyScore, chat.id, chat.members, messages, detectedEvent, isSending])
