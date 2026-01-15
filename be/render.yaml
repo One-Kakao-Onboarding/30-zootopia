@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: zootopia-backend
+    runtime: java
+    plan: free
+    buildCommand: ./gradlew build -x test
+    startCommand: java -jar build/libs/*.jar
+    envVars:
+      - key: DATABASE_PASSWORD
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: JAVA_TOOL_OPTIONS
+        value: -Xmx512m
