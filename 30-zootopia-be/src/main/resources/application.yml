@@ -1,0 +1,66 @@
+spring:
+  application:
+    name: zootopia-backend
+
+  # PostgreSQL Connection
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres}
+    username: ${DATABASE_USERNAME:postgres.kmsbeemccqoosqkbkyma}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  # Jackson settings
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+    time-zone: Asia/Seoul
+
+# Server settings
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /api
+
+# JWT settings
+jwt:
+  secret: ${JWT_SECRET:your-256-bit-secret-key-here-change-in-production}
+  expiration: 86400000 # 24 hours in milliseconds
+
+# OpenAI API settings
+openai:
+  api-key: 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
+  model: gpt-5.2
+  base-url: https://api.openai.com/v1
+  timeout: 300000
+  max-tokens: 100000
+
+# Logging
+logging:
+  level:
+    com.zootopia.backend: INFO
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+
+# Swagger/OpenAPI
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
