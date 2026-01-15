@@ -54,7 +54,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           width={200}
           height={50}
         />
-        <p className="text-sm text-[#3C1E1E]/70 mt-3">'카톡 사이'를 읽고 '우리 사이'를 잇는 AI 에이전트</p>
+        <p className="text-sm text-[#3C1E1E]/70 mt-3">AI가 관리하는 나의 인간관계</p>
       </div>
 
       {/* Login Form */}

@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://zootopia-be.onrender.com/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api';
 
 // Types
 export interface ApiResponse<T> {
@@ -429,7 +429,7 @@ export const aiApi = {
 
 // WebSocket Helper
 export function createWebSocketConnection(userId: string) {
-  const wsUrl = (process.env.NEXT_PUBLIC_WS_URL || 'wss://zootopia-be.onrender.com') + '/ws';
+  const wsUrl = (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080') + '/ws';
 
   return {
     url: wsUrl,
