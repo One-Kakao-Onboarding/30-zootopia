@@ -301,17 +301,55 @@ export function ChatRoom({ chat, onBack, onLeaveChat }: ChatRoomProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [showOptionsMenu])
 
-  // Auto-reply check
+  // Auto-reply check - 완전 자동 모드에서 바로 답장 보내기
   useEffect(() => {
-    if (settings.replyMode === "auto" && chat.intimacyScore !== undefined) {
+    if (settings.replyMode === "auto" && chat.intimacyScore !== undefined && detectedEvent) {
       const eventMessage = messages.find((m) => m.event?.detected)
       const hasMyReply = messages.some((m) => m.sender === "me")
 
-      if (eventMessage && chat.intimacyScore <= settings.autoReplyThreshold && !hasMyReply) {
-        setPendingAutoReply({ event: eventMessage.event, show: true })
+      if (eventMessage && chat.intimacyScore <= settings.autoReplyThreshold && !hasMyReply && !isSending) {
+        // 바로 자동 답장 보내기
+        const tone = settings.defaultTone
+        const replyText = autoReplyOptions[detectedEvent][tone]
+        const chatRoomId = parseInt(chat.id)
+
+        // Optimistic UI
+        const tempId = `temp-auto-${Date.now()}`
+        const optimisticMessage: Message = {
+          id: tempId,
+          content: replyText,
+          sender: "me",
+          timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }),
+          isAutoReply: true,
+        }
+        setMessages(prev => [...prev, optimisticMessage])
+        setPendingAutoReply(null)
+        setShowAIPanel(false)
+        setSuggestReplies(null)
+        setDetectedEvent(null)
+        setIsSending(true)
+        isSendingRef.current = true
+
+        messageApi.sendMessage(chatRoomId, {
+          content: replyText,
+          type: 'TEXT',
+          isAutoReply: true
+        }).then(response => {
+          setMessages(prev => prev.map(msg =>
+            msg.id === tempId ? { ...msg, id: response.id.toString() } : msg
+          ))
+        }).catch(error => {
+          console.error('Failed to send auto reply:', error)
+          setMessages(prev => prev.filter(msg => msg.id !== tempId))
+        }).finally(() => {
+          setIsSending(false)
+          setTimeout(() => {
+            isSendingRef.current = false
+          }, 100)
+        })
       }
     }
-  }, [settings.replyMode, settings.autoReplyThreshold, chat.intimacyScore, messages])
+  }, [settings.replyMode, settings.autoReplyThreshold, settings.defaultTone, chat.intimacyScore, chat.id, messages, detectedEvent, isSending])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
