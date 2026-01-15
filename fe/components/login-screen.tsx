@@ -3,7 +3,6 @@
 import type React from "react"
 
 import { useState } from "react"
-import { MessageCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { authApi, type LoginResponse } from "@/lib/api"
@@ -42,11 +41,20 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     <div className="min-h-screen bg-[#FEE500] flex flex-col items-center justify-center px-8">
       {/* Logo */}
       <div className="flex flex-col items-center mb-12">
-        <div className="w-20 h-20 bg-[#3C1E1E] rounded-[24px] flex items-center justify-center mb-4 shadow-lg">
-          <MessageCircle className="w-10 h-10 text-[#FEE500]" />
-        </div>
-        <h1 className="text-3xl font-bold text-[#3C1E1E]">카톡사이</h1>
-        <p className="text-sm text-[#3C1E1E]/70 mt-2">AI가 관리하는 나의 인간관계</p>
+        <img
+          src="/logo-icon.png"
+          alt="KaTalk S2"
+          width={120}
+          height={120}
+          className="mb-4"
+        />
+        <img
+          src="/logo-text.png"
+          alt="KaTalk S2"
+          width={200}
+          height={50}
+        />
+        <p className="text-sm text-[#3C1E1E]/70 mt-3">AI가 관리하는 나의 인간관계</p>
       </div>
 
       {/* Login Form */}

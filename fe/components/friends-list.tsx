@@ -147,7 +147,10 @@ export function FriendsList({ onSelectChat }: FriendsListProps) {
           </div>
         ) : (
           <>
-            <h1 className="text-xl font-bold text-foreground">친구</h1>
+            <div className="flex items-center gap-2">
+              <img src="/logo-icon.png" alt="KaTalk S2" className="w-8 h-8" />
+              <h1 className="text-xl font-bold text-foreground">친구</h1>
+            </div>
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="icon" onClick={() => setShowRelationshipModal(true)}>
                 <Users className="w-5 h-5" />
@@ -172,7 +175,7 @@ export function FriendsList({ onSelectChat }: FriendsListProps) {
               </Avatar>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-foreground">{myProfile.name || myProfile.userId}</p>
-                <p className="text-sm text-muted-foreground truncate">{myProfile.statusMessage || '카톡사이와 함께하는 스마트한 대화'}</p>
+                <p className="text-sm text-muted-foreground truncate">{myProfile.statusMessage || 'KaTalk S2와 함께하는 스마트한 대화'}</p>
               </div>
             </div>
           </div>

@@ -8,9 +8,13 @@ const _geist = Geist({ subsets: ["latin"] })
 const _geistMono = Geist_Mono({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "카톡사이 - AI 메신저 어시스턴트",
+  title: "KaTalk S2 - AI 메신저 어시스턴트",
   description: "AI-powered messenger assistant for smart relationship management",
-    generator: 'v0.app'
+  generator: 'v0.app',
+  icons: {
+    icon: '/logo-icon.png',
+    apple: '/logo-icon.png',
+  },
 }
 
 export const viewport: Viewport = {

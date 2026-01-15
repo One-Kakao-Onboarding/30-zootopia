@@ -250,7 +250,10 @@ export function ChatList({ chats, onSelectChat, onLeaveChat }: ChatListProps) {
           </div>
         ) : (
           <>
-            <h1 className="text-xl font-bold text-foreground">채팅</h1>
+            <div className="flex items-center gap-2">
+              <img src="/logo-icon.png" alt="KaTalk S2" className="w-8 h-8" />
+              <h1 className="text-xl font-bold text-foreground">채팅</h1>
+            </div>
             <Button variant="ghost" size="icon" onClick={() => setIsSearching(true)}>
               <Search className="w-5 h-5" />
             </Button>

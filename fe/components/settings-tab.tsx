@@ -15,7 +15,10 @@ export function SettingsTab({ onLogout }: SettingsTabProps) {
     <div className="flex flex-col h-full">
       {/* Header */}
       <header className="bg-card border-b border-border px-5 py-4">
-        <h1 className="text-xl font-bold text-foreground">설정</h1>
+        <div className="flex items-center gap-2">
+          <img src="/logo-icon.png" alt="KaTalk S2" className="w-8 h-8" />
+          <h1 className="text-xl font-bold text-foreground">설정</h1>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto">
@@ -26,7 +29,7 @@ export function SettingsTab({ onLogout }: SettingsTabProps) {
               <Bot className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h2 className="font-semibold text-foreground">카톡사이 AI 설정</h2>
+              <h2 className="font-semibold text-foreground">KaTalk S2 AI 설정</h2>
               <p className="text-xs text-muted-foreground">AI 답장 추천 모드</p>
             </div>
           </div>
@@ -82,7 +85,7 @@ export function SettingsTab({ onLogout }: SettingsTabProps) {
 
         {/* 버전 정보 */}
         <div className="px-4 pb-8 text-center">
-          <p className="text-xs text-muted-foreground">카톡사이 v1.0.0</p>
+          <p className="text-xs text-muted-foreground">KaTalk S2 v1.0.0</p>
         </div>
       </div>
     </div>
