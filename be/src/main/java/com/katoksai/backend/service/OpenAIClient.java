@@ -101,7 +101,7 @@ public class OpenAIClient {
     public record ChatRequest(
             String model,
             List<ChatMessage> messages,
-            @JsonProperty("max_tokens") Integer maxTokens,
+            @JsonProperty("max_completion_tokens") Integer maxCompletionTokens,
             double temperature
     ) {
         // Constructor that handles 0 or negative maxTokens by setting to null (no limit)
