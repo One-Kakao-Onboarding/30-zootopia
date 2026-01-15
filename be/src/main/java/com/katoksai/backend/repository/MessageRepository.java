@@ -37,4 +37,7 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
 
     @Query("SELECT m FROM Message m WHERE m.sender.id = :senderId AND m.isDeleted = false ORDER BY m.createdAt DESC")
     List<Message> findBySenderIdOrderByCreatedAtDesc(@Param("senderId") Long senderId);
+
+    @Query("SELECT m FROM Message m WHERE m.chatRoom.id = :chatRoomId AND m.sender.id = :senderId AND m.isDeleted = false ORDER BY m.createdAt DESC")
+    List<Message> findByChatRoomIdAndSenderIdOrderByCreatedAtDesc(@Param("chatRoomId") Long chatRoomId, @Param("senderId") Long senderId);
 }

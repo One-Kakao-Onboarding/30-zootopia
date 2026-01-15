@@ -52,61 +52,59 @@ public class AIService {
         당신은 카카오톡 메시지 스타일 모방 전문가입니다.
 
         ## 핵심 임무
-        아래 사용자의 실제 메시지들을 철저히 분석하고, 그 사람처럼 답장을 작성하세요.
-        **절대로 "결혼 축하해! 행복하게 잘 살아~" 같은 뻔한 템플릿을 사용하지 마세요.**
+        "%s"님이 **이 친구에게** 보낸 실제 메시지들을 분석하고, 같은 스타일로 답장을 작성하세요.
+        이 친구에게만 쓰는 특유의 말투가 있을 수 있으니, 아래 메시지들을 꼼꼼히 분석하세요.
 
-        ## 분석 대상: "%s"님
+        **절대로 "결혼 축하해! 행복하게 잘 살아~" 같은 뻔한 템플릿 금지!**
 
-        ### [중요] 이 사람의 실제 메시지들 - 반드시 이 스타일을 따라하세요:
+        ### [핵심] 이 친구에게 보낸 "%s"님의 실제 메시지들:
         ```
         %s
         ```
 
-        ### 스타일 분석 체크리스트 (각 항목을 꼭 확인하세요):
-        1. 이모티콘: 어떤 이모지를 쓰나요? (😊💕🎉 등) 안 쓰면 안 쓰는 대로!
-        2. 웃음 표현: ㅋㅋ? ㅎㅎ? ㅋㅋㅋㅋㅋ? 아예 안 씀?
-        3. 말투: 반말? 존댓말? "요"로 끝남? "ㅇㅇ"처럼 짧게?
-        4. 문장 길이: 짧게 끊어서? 길게 한 문장으로?
-        5. 느낌표/물음표: 많이 씀? 안 씀?
-        6. 특이한 표현: 자주 쓰는 단어나 표현이 있나요?
+        ### 스타일 분석 포인트:
+        1. 이모티콘: 이 친구한테 이모지 쓰나요? 어떤 종류?
+        2. 웃음 표현: ㅋㅋ? ㅎㅎ? 안 씀?
+        3. 말투: 이 친구한테 반말? 존댓말? 반존대?
+        4. 문장 스타일: 짧게? 길게?
+        5. 특유의 표현: 이 친구한테만 쓰는 말이 있나요?
 
-        ### 현재 상황:
-        - 이벤트: %s (결혼/생일/부고/동창회 등)
+        ### 상황:
+        - 이벤트: %s
         - 친밀도: %d/100
         - 관계: %s
 
-        ### 최근 대화:
+        ### 최근 대화 맥락:
         %s
 
-        ## 생성 규칙 (필수!)
-        1. **위 메시지들의 말투를 그대로 복사하듯이 따라하세요**
-        2. 그 사람이 이모지를 안 쓰면 당신도 쓰지 마세요
-        3. 그 사람이 "ㅋㅋ"를 쓰면 당신도 쓰세요
-        4. 그 사람이 짧게 말하면 당신도 짧게 하세요
-        5. **매번 다른 답장을 생성하세요 - 절대 같은 답장 반복 금지!**
-        6. 상황에 맞는 자연스러운 한국어 카톡 메시지를 작성하세요
+        ## 생성 규칙
+        1. **이 친구에게 쓰는 말투를 그대로 따라하세요**
+        2. 위 메시지에서 이모지 안 쓰면 → 이모지 쓰지 마세요
+        3. 위 메시지에서 ㅋㅋ 쓰면 → ㅋㅋ 쓰세요
+        4. 위 메시지에서 반말 쓰면 → 반말 쓰세요
+        5. 매번 다른 답장 생성 (같은 답장 반복 금지)
 
-        다음 JSON 형식으로 반환 (JSON만!):
+        JSON만 반환:
         {
             "replies": [
                 {
-                    "tone": "사용자 스타일 (기본)",
-                    "message": "위 메시지 스타일을 분석해서 작성한 답장",
-                    "explanation": "어떤 스타일 특징을 반영했는지"
+                    "tone": "평소 스타일",
+                    "message": "이 친구에게 쓰는 평소 말투로 작성",
+                    "explanation": "분석한 스타일 특징"
                 },
                 {
-                    "tone": "조금 더 격식있게",
+                    "tone": "조금 더 정중하게",
                     "message": "살짝 더 정중한 버전",
                     "explanation": "격식을 높인 이유"
                 },
                 {
                     "tone": "조금 더 친근하게",
-                    "message": "살짝 더 친한척 버전",
+                    "message": "살짝 더 친한 버전",
                     "explanation": "친근함을 높인 이유"
                 }
             ],
             "recommendedIndex": 0,
-            "aiInsight": "이 사용자의 대화 스타일 특징 요약"
+            "aiInsight": "이 친구에게 쓰는 대화 스타일 분석"
         }
         """;
 
@@ -225,12 +223,14 @@ public class AIService {
                 .map(Friendship::getIntimacyScore)
                 .orElse(50);
 
-        // 사용자의 과거 메시지 수집 (스타일 학습용) - 최근 30개
-        List<Message> userMessages = messageRepository.findBySenderIdOrderByCreatedAtDesc(userId);
+        // 해당 채팅방에서 사용자의 과거 메시지 수집 (개인화된 스타일 학습용) - 최근 30개
+        List<Message> userMessages = messageRepository.findByChatRoomIdAndSenderIdOrderByCreatedAtDesc(chatRoomId, userId);
         int styleLimit = Math.min(30, userMessages.size());
         String userStyleMessages = userMessages.subList(0, styleLimit).stream()
                 .map(Message::getContent)
                 .collect(Collectors.joining("\n"));
+
+        log.info("Analyzing {} messages from chatRoom {} for user {}", userMessages.size(), chatRoomId, userName);
 
         // 현재 채팅방의 최근 대화 (맥락용)
         List<Message> recentMessages = messageRepository.findAllByChatRoomIdOrderByCreatedAtAsc(chatRoomId);
@@ -243,8 +243,9 @@ public class AIService {
 
         String prompt = String.format(
                 REPLY_GENERATION_PROMPT,
-                userName,           // 사용자 이름
-                userStyleMessages.isEmpty() ? "(메시지 없음)" : userStyleMessages,  // 사용자의 과거 메시지들 (스타일 학습)
+                userName,           // 사용자 이름 (첫 번째)
+                userName,           // 사용자 이름 (두 번째)
+                userStyleMessages.isEmpty() ? "(메시지 없음)" : userStyleMessages,  // 이 친구에게 보낸 메시지들
                 eventType,          // 이벤트 유형
                 intimacyScore,      // 친밀도
                 relationshipAnalysis.summary(),  // 관계 분석

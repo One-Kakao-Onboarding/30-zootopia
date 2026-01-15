@@ -32,7 +32,7 @@ export interface UserResponse {
 }
 
 export interface UserSettings {
-  replyMode: 'auto' | 'suggest';
+  replyMode: 'suggest';
   autoReplyThreshold: number;
   defaultTone: 'polite' | 'friendly' | 'formal';
   notificationsEnabled: boolean;

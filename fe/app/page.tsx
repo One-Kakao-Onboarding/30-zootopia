@@ -18,7 +18,7 @@ import {
 } from "@/lib/api"
 
 export interface AppSettings {
-  replyMode: "auto" | "suggest"
+  replyMode: "suggest"
   autoReplyThreshold: number
   defaultTone: "polite" | "friendly" | "formal"
 }
